@@ -16,7 +16,7 @@ def build_data(rebuild=False, img_size=512, limit_records=None):
 
     if rebuild:
         client = MongoClient('mongodb://192.168.0.104:27017')
-        db = client.geometry2
+        db = client.geometry3
         objects = db.objects
 
         fileidsWithDims = list(objects.find().distinct('GroupId'))
