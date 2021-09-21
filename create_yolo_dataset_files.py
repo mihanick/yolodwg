@@ -1,9 +1,8 @@
 from pathlib import Path
-from sys import path
 import numpy as np
 
 from processing import build_data
-from plot_graphics import generate_file
+
 import pandas as pd
 from PIL import Image
 import os
@@ -53,8 +52,24 @@ def create_yolo_dataset_files(rebuild=False, generate_images=True, generate_labe
                                         source_img_stripped = df[(df['GroupId'] == id)]['StrippedFileName'].iloc[0]
                                         source_image_annotated = df[(df['GroupId'] == id)]['AnnotatedFileName'].iloc[0]
 
-                                        copyfile(source_img_stripped, image_file_name)
-                                        copyfile(source_image_annotated, "{}/{}.{}".format(str(test_images_path), id, format))
+                                        def ResaveAsSquareSize(src_img_path, trgt_img_path):
+                                                '''
+                                                https://jdhao.github.io/2017/11/06/resize-image-to-square-with-padding/
+                                                '''
+                                                src = Image.open(src_img_path)
+                                                max_size = max(src.size)
+                                                trg = Image.new("RGBA", (max_size, max_size))
+
+                                                # http://espressocode.top/python-pil-paste-and-rotate-method/
+                                                # image is pasted using top left coords
+                                                # while drawing coordinate system 0,0 is bottom left
+                                                # so we have to shift by y size difference
+                                                trg.paste(src, (0, max_size - src.size[1]))
+                                                trg.save(trgt_img_path)
+
+
+                                        ResaveAsSquareSize(source_img_stripped, image_file_name)
+                                        ResaveAsSquareSize(source_image_annotated, "{}/{}.{}".format(str(test_images_path), id, format))
 
                                 desc_file.write("{}\n".format(image_file_name))
 

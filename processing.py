@@ -9,6 +9,7 @@ import math
 import os
 from pathlib import Path
 from pymongo import MongoClient
+from PIL import Image
 
 def build_data(rebuild=False, img_size=512, limit_records=None):
     pickle_file = 'dataset.pickle'
@@ -46,7 +47,7 @@ def build_data(rebuild=False, img_size=512, limit_records=None):
 
     else:
         df = pd.read_pickle(pickle_file)
-        df = normalize(df, to_size=img_size)
+        # df = normalize(df, to_size=img_size)
         with open(group_ids_file) as f:
             result_ids = f.read().splitlines()
 
@@ -122,21 +123,22 @@ def query_collection_to_dataframe(db=None, group_id=None, max_entities=400, min_
     if fragment is not None:
         # strppd_file = Path(fragment['StrippedFileName'])
         # anntd_file = Path(fragment['AnnotatedFileName'])
-        stripped_file =  source_images_dir / ('stripped_'+group_id+'.png')
-        annotated_file =  source_images_dir / ('annotated_'+group_id+'.png')
+        stripped_file = source_images_dir / ('stripped_' + group_id + '.png')
+        annotated_file = source_images_dir / ('annotated_' + group_id + '.png')
         if stripped_file.exists:
             df['StrippedFileName'] = str(stripped_file)
         if annotated_file.exists:
             df['AnnotatedFileName'] = str(annotated_file)
         bound_min_x = fragment['MinBoundPoint']['X']
         bound_min_y = fragment['MinBoundPoint']['Y']
-
+        bound_max_x = fragment['MaxBoundPoint']['X']
+        bound_max_y = fragment['MaxBoundPoint']['Y']
         # we normalize dataframe
-        df = normalize(df=df, base_pnt_x=bound_min_x, base_pnt_y=bound_min_y)
+        df = normalize(df=df, base_pnt_x=bound_min_x, base_pnt_y=bound_min_y, diff_x=bound_max_x - bound_min_x, diff_y=bound_max_y - bound_min_y)
 
         return df[dataframe_cols]
 
-def normalize(df, to_size=512, base_pnt_x=0, base_pnt_y=0):
+def normalize(df, to_size=512, base_pnt_x=0, base_pnt_y=0, diff_x=None, diff_y=None):
     '''
     scales coordinate dataframe columns containig .X or .Y
     to be in [0...to_size] range
@@ -156,15 +158,9 @@ def normalize(df, to_size=512, base_pnt_x=0, base_pnt_y=0):
     df[ycols] -= base_pnt_y
 
     cols = xcols + ycols
-
     coords = df[cols]
-    max_coord_x = df[xcols].max().max()
-    max_coord_y = df[ycols].max().max()
-    min_coord_x = df[xcols].min().min()
-    min_coord_y = df[ycols].min().min()
 
-    diff_x = max_coord_x - min_coord_x
-    diff_y = max_coord_y - min_coord_y
+    assert diff_x > 0 and diff_y > 0,  "Bound diffs should be positive"
 
     diff = max(diff_x, diff_y)
 
@@ -180,8 +176,8 @@ def normalize(df, to_size=512, base_pnt_x=0, base_pnt_y=0):
     scale = to_size/diff
 
     # print(min_coord, scale)
-    df[xcols] = (coords[xcols] - min_coord_x) * scale
-    df[ycols] = (coords[ycols] - min_coord_y) * scale
+    df[xcols] = (coords[xcols]) * scale
+    df[ycols] = (coords[ycols]) * scale
 
     return  df
     

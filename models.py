@@ -356,7 +356,7 @@ def CalculatePrediction(batch_of_images, model=None):
     if model is None:
         config_path='config/yolov3.cfg'
         # weights_path='./15.weights'
-        weights_path = './checkpoints/19.weights'
+        weights_path = './config/yolov3.weights'
         class_path='config/dwg.names'
 
         # Load model and weights

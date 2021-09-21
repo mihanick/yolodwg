@@ -360,5 +360,6 @@ data/images/*.*
 data/dwg/images/*
 data/dwg/labels/*
 ids.txt
-
-
+dataset.pickle
+data/dwg/train.txt
+data/dwg/val.txt
