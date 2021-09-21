@@ -24,7 +24,7 @@ except:
     
 def generate_file2(file_id, path=None, verbose=False, save_file=False, draw_dimensions=False, draw_texts=False, main_stroke='2'):
     return generate_file(
-        group = query_collection_to_dataframe(fileId=file_id),
+        group = query_collection_to_dataframe(group_id=file_id),
         path=path, 
         verbose=verbose,
         save_file=save_file,

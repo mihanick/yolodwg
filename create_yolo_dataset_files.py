@@ -7,6 +7,7 @@ from plot_graphics import generate_file
 import pandas as pd
 from PIL import Image
 import os
+from shutil import copyfile
 
 #################################################################
 def create_yolo_dataset_files(rebuild=False, generate_images=True, generate_labels=True, img_size=512, limit_records=None):
@@ -18,16 +19,20 @@ def create_yolo_dataset_files(rebuild=False, generate_images=True, generate_labe
         np.random.shuffle(ids)
 
         train_images_path = Path("data/dwg/images/train")
-        train_images_path.mkdir(parents=True,exist_ok=True)
+        train_images_path.mkdir(parents=True, exist_ok=True)
         train_labels_path = Path("data/dwg/labels/train")
-        train_labels_path.mkdir(parents=True,exist_ok=True)
+        train_labels_path.mkdir(parents=True, exist_ok=True)
         train_desc_file_path = "data/dwg/train.txt"
 
         val_images_path = Path("data/dwg/images/val")
-        val_images_path.mkdir(parents=True,exist_ok=True)
+        val_images_path.mkdir(parents=True, exist_ok=True)
         val_labels_path = Path("data/dwg/labels/val")
-        val_labels_path.mkdir(parents=True,exist_ok=True)
+        val_labels_path.mkdir(parents=True, exist_ok=True)
         val_desc_file_path = "data/dwg/val.txt"
+
+        # folder for images with plotted annotations
+        test_images_path = Path("data/dwg/images/test")
+        test_images_path.mkdir(parents=True, exist_ok=True)
 
         with open(train_desc_file_path, "w") as train_desc_file:
                 with open(val_desc_file_path, "w") as val_desc_file:
@@ -40,27 +45,18 @@ def create_yolo_dataset_files(rebuild=False, generate_images=True, generate_labe
                                         image_folder = str(val_images_path)
                                         label_folder = str(val_labels_path)
 
-                                format = 'bmp'
+                                format = 'png'
                                 image_file_name = "{}/{}.{}".format(image_folder, id, format)
                                 label_file_name = "{}/{}.txt".format(label_folder, id)
 
                                 if generate_images:
-                                        generate_file(
-                                                df[df['GroupId'] == id], 
-                                                path=image_file_name,
-                                                verbose=False, 
-                                                draw_dimensions=False, 
-                                                draw_texts=False, 
-                                                save_file=True,
-                                                main_stroke='1',
-                                                img_size=img_size,
-                                                format=format)
+                                        source_img_stripped = df[(df['GroupId'] == id)]['StrippedFileName'].iloc[0]
+                                        source_image_annotated = df[(df['GroupId'] == id)]['AnnotatedFileName'].iloc[0]
+
+                                        copyfile(source_img_stripped, image_file_name)
+                                        copyfile(source_image_annotated, "{}/{}.{}".format(str(test_images_path), id, format))
 
                                 desc_file.write("{}\n".format(image_file_name))
-
-                                base_aperture = 6 #px
-                                pnt_bb_width = 2*base_aperture + 1
-                                pnt_bb_height = 2*base_aperture + 1
 
                                 if generate_labels:
                                         dims = df[(df['GroupId'] == id) & (df['ClassName'] == 'AlignedDimension')]
@@ -105,4 +101,4 @@ def create_yolo_dataset_files(rebuild=False, generate_images=True, generate_labe
 
                                 # break #debug
 if __name__ == "__main__":
-    create_yolo_dataset_files(img_size=512, limit_records=None)
+    create_yolo_dataset_files(rebuild=True, img_size=512, limit_records=1500)

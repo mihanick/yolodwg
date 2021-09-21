@@ -348,5 +348,17 @@ MigrationBackup/
 
 # Ionide (cross platform F# VS Code tools) working folder
 .ionide/
+
 utils/.ipynb_checkpoints/utils-checkpoint.py
+.ipynb_checkpoints/*
+
+# exclude weigths as overweighted )
 config/yolov3.weights
+
+# exclude data
+data/images/*.*
+data/dwg/images/*
+data/dwg/labels/*
+ids.txt
+
+
