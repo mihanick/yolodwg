@@ -350,10 +350,10 @@ MigrationBackup/
 .ionide/
 
 utils/.ipynb_checkpoints/utils-checkpoint.py
-.ipynb_checkpoints/*
+.ipynb_checkpoints
 
 # exclude weigths as overweighted )
-config/yolov3.weights
+*.weights
 
 # exclude data
 data/images/*.*
