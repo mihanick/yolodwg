@@ -355,8 +355,8 @@ class Darknet(nn.Module):
 def CalculatePrediction(batch_of_images, model=None):
     if model is None:
         config_path='config/yolov3.cfg'
-        # weights_path='./15.weights'
-        weights_path = './config/yolov3.weights'
+        weights_path='checkpoints/best.weights'
+        #weights_path = './config/yolov3.weights'
         class_path='config/dwg.names'
 
         # Load model and weights
@@ -365,10 +365,10 @@ def CalculatePrediction(batch_of_images, model=None):
 
     model.eval()
 
-    conf_thres = 0.5
-    nms_thres = 0.1
+    conf_thres = 0.7
+    nms_thres = 0.05
 
     detections = model(batch_of_images)
-    detections_suppressed = non_max_suppression(detections, 87, conf_thres, nms_thres)
+    detections_suppressed = non_max_suppression(detections, 120, conf_thres, nms_thres)
 
     return detections_suppressed

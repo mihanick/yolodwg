@@ -277,8 +277,8 @@ def PlotImageAndPrediction(image, target, detections):
     plt.figure()
     fig, ax = plt.subplots(1, figsize=(12, 9))
     
-    # inverse colors
-    img = 1 - img
+    # to black
+    # img[img[:,:] < 1] = 0
     
     # TODO: Show white image
     ax.imshow(img)
@@ -305,7 +305,7 @@ def PlotImageAndPrediction(image, target, detections):
         colors = [cmap(i) for i in np.linspace(0, 1, 20)]
         bbox_colors = random.sample(colors, n_cls_preds)
         # browse detections and draw bounding boxes
-        for x1, y1, x2, y2, conf, cls_conf, cls_pred in detections:
+        for x1, y1, x2, y2, conf, cls_conf, cls_pred in detections.cpu():
             box_h = (y2 - y1)
             box_w = (x2 - x1)
             color = bbox_colors[int(np.where(unique_labels == int(cls_pred))[0])]
@@ -319,7 +319,7 @@ def PlotImageAndPrediction(image, target, detections):
             ax.add_patch(bbox)
             plt.text(x1, y1, s="{0:.0%}".format(conf.item()), color=color, verticalalignment='top')
     if target is not None:
-        for tt in target:
+        for tt in target.cpu():
             cls = tt[0]
             box_h = tt[4] * im_size
             box_w = tt[3] * im_size

@@ -8,9 +8,15 @@ from IPython.display import Image
 from pathlib import Path
 import os.path
 
+# https://stackoverflow.com/questions/63268967/configure-pycharm-debugger-to-display-array-tensor-shape
+old_repr = torch.Tensor.__repr__
+def tensor_info(tensor):
+    return repr(tensor.shape)[6:] + ' ' + repr(tensor.dtype)[6:] + '@' + str(tensor.device) + '\n' + old_repr(tensor)
+torch.Tensor.__repr__ = tensor_info
+
 def test_draw():
     dataloader = torch.utils.data.DataLoader(
-        ListDataset('./data/dwg/train.txt', max_objects=87), batch_size=4, shuffle=False
+        ListDataset('./data/dwg/train.txt', max_objects=120), batch_size=4, shuffle=False
     )
 
     for batch_i, (file_names, imgs, targets) in enumerate(dataloader):

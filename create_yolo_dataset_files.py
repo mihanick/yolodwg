@@ -33,6 +33,8 @@ def create_yolo_dataset_files(rebuild=False, generate_images=True, generate_labe
         test_images_path = Path("data/dwg/images/test")
         test_images_path.mkdir(parents=True, exist_ok=True)
 
+        max_labels = 0
+
         with open(train_desc_file_path, "w") as train_desc_file:
                 with open(val_desc_file_path, "w") as val_desc_file:
                         for i, id in enumerate(ids):
@@ -44,8 +46,8 @@ def create_yolo_dataset_files(rebuild=False, generate_images=True, generate_labe
                                         image_folder = str(val_images_path)
                                         label_folder = str(val_labels_path)
 
-                                format = 'png'
-                                image_file_name = "{}/{}.{}".format(image_folder, id, format)
+                                image_format = 'png'
+                                image_file_name = "{}/{}.{}".format(image_folder, id, image_format)
                                 label_file_name = "{}/{}.txt".format(label_folder, id)
 
                                 if generate_images:
@@ -69,7 +71,7 @@ def create_yolo_dataset_files(rebuild=False, generate_images=True, generate_labe
 
 
                                         ResaveAsSquareSize(source_img_stripped, image_file_name)
-                                        ResaveAsSquareSize(source_image_annotated, "{}/{}.{}".format(str(test_images_path), id, format))
+                                        ResaveAsSquareSize(source_image_annotated, "{}/{}.{}".format(str(test_images_path), id, image_format))
 
                                 desc_file.write("{}\n".format(image_file_name))
 
@@ -113,7 +115,11 @@ def create_yolo_dataset_files(rebuild=False, generate_images=True, generate_labe
                                                                 bb_width / img_size,
                                                                 bb_height / img_size
                                                         ))
+                                        if max_labels < len(labels):
+                                                max_labels = len(labels)
+                                                
 
-                                # break #debug
+                        
+        print("Max labels per image: ", max_labels)
 if __name__ == "__main__":
-    create_yolo_dataset_files(rebuild=True, img_size=512, limit_records=1500)
+    create_yolo_dataset_files(rebuild=True, img_size=512, limit_records=3000)

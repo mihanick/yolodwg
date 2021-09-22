@@ -3,6 +3,8 @@
 from __future__ import division
 from tkinter import image_names
 
+from numpy import mod
+
 from models import *
 from utils.utils import *
 from utils.datasets import *
@@ -67,12 +69,15 @@ def run(
 
     # Get dataloader
     dataloader = torch.utils.data.DataLoader(
-        ListDataset(train_path, max_objects=87), batch_size=batch_size, shuffle=False, num_workers=n_cpu
+        ListDataset(train_path, max_objects=120), batch_size=batch_size, shuffle=False, num_workers=n_cpu
     )
 
     Tensor = torch.cuda.FloatTensor if cuda else torch.FloatTensor
 
     optimizer = torch.optim.Adam(filter(lambda p: p.requires_grad, model.parameters()))
+
+    best_recall = 0
+    best_precision = 0
 
     for epoch in range(epochs):
         for batch_i, (_, imgs, targets) in enumerate(dataloader):
@@ -112,13 +117,18 @@ def run(
             imgs = imgs.cuda()
             targets = targets.cuda()
             
-        dets = CalculatePrediction(model=model, batch_of_images=imgs)
-        for i, _img in enumerate(imgs):
-            det = dets[i]
-            trg = targets[i]
-            display.display(PlotImageAndPrediction(image=_img, target=trg, detections=det))
+        #dets = CalculatePrediction(model=model, batch_of_images=imgs)
+        #for i, _img in enumerate(imgs):
+        #    det = dets[i]
+        #    trg = targets[i]
+        #    display.display(PlotImageAndPrediction(image=_img, target=trg, detections=det))
 
         if epoch % checkpoint_interval == 0:
             model.save_weights("%s/%d.weights" % (checkpoint_dir, epoch))
-        
+        if model.losses['recall'] > best_recall and model.losses['precision'] > best_precision:
+            best_precision = model.losses['precision']
+            best_recall = model.losses['recall']
+            model.save_weights(checkpoint_dir + "/best.weights")
+            print("best recall: {0:.4f} best precision: {1:.4f}".format(best_recall, best_precision))
+    
         
