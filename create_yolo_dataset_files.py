@@ -37,7 +37,7 @@ def create_yolo_dataset_files(rebuild=False, generate_images=True, generate_labe
 
         with open(train_desc_file_path, "w") as train_desc_file:
                 with open(val_desc_file_path, "w") as val_desc_file:
-                        for i, id in enumerate(ids):
+                        for i, group_id in enumerate(ids):
                                 desc_file = train_desc_file
                                 image_folder = str(train_images_path)
                                 label_folder = str(train_labels_path)
@@ -47,13 +47,13 @@ def create_yolo_dataset_files(rebuild=False, generate_images=True, generate_labe
                                         label_folder = str(val_labels_path)
 
                                 image_format = 'png'
-                                image_file_name = "{}/{}.{}".format(image_folder, id, image_format)
-                                label_file_name = "{}/{}.txt".format(label_folder, id)
-
+                                image_file_name = "{}/{}.{}".format(image_folder, group_id, image_format)
+                                label_file_name = "{}/{}.txt".format(label_folder, group_id)
+                                image_with_annotations_file_name = "{}/{}.{}".format(str(test_images_path), group_id, image_format)
                                 if generate_images:
-                                        source_img_stripped = df[(df['GroupId'] == id)]['StrippedFileName'].iloc[0]
-                                        source_image_annotated = df[(df['GroupId'] == id)]['AnnotatedFileName'].iloc[0]
-
+                                        #source_img_stripped = df[(df['GroupId'] == group_id)]['StrippedFileName'].iloc[0]
+                                        #source_image_annotated = df[(df['GroupId'] == group_id)]['AnnotatedFileName'].iloc[0]
+                                        source_image_annotated = f'./data/images/annotated_{group_id}.png'
                                         def ResaveAsSquareSize(src_img_path, trgt_img_path):
                                                 '''
                                                 https://jdhao.github.io/2017/11/06/resize-image-to-square-with-padding/
@@ -70,13 +70,14 @@ def create_yolo_dataset_files(rebuild=False, generate_images=True, generate_labe
                                                 trg.save(trgt_img_path)
 
 
-                                        ResaveAsSquareSize(source_img_stripped, image_file_name)
-                                        ResaveAsSquareSize(source_image_annotated, "{}/{}.{}".format(str(test_images_path), id, image_format))
+                                        # ResaveAsSquareSize(source_img_stripped, image_file_name)
+                                        # ResaveAsSquareSize(source_image_annotated, image_with_annotations_file_name)
+                                        ResaveAsSquareSize(source_image_annotated, image_file_name)
 
                                 desc_file.write("{}\n".format(image_file_name))
 
                                 if generate_labels:
-                                        dims = df[(df['GroupId'] == id) & (df['ClassName'] == 'AlignedDimension')]
+                                        dims = df[(df['GroupId'] == group_id) & (df['ClassName'] == 'AlignedDimension')]
 
                                         labels = []
                                         for _, dim_row in dims.iterrows():
@@ -105,7 +106,7 @@ def create_yolo_dataset_files(rebuild=False, generate_images=True, generate_labe
                                                         lbl = 3 # right
 
                                                 labels.append([lbl, bb_center_x, bb_center_y, bb_width, bb_height])
-                                                                
+
                                         with open(label_file_name, 'w') as label_file:
                                                 for cat, center_x, center_y, bb_width, bb_height in labels:
                                                         label_file.write("{} {} {} {} {} \n".format(
@@ -115,6 +116,7 @@ def create_yolo_dataset_files(rebuild=False, generate_images=True, generate_labe
                                                                 bb_width / img_size,
                                                                 bb_height / img_size
                                                         ))
+
                                         if max_labels < len(labels):
                                                 max_labels = len(labels)
                                                 
@@ -122,4 +124,4 @@ def create_yolo_dataset_files(rebuild=False, generate_images=True, generate_labe
                         
         print("Max labels per image: ", max_labels)
 if __name__ == "__main__":
-    create_yolo_dataset_files(rebuild=True, img_size=512, limit_records=3000)
+    create_yolo_dataset_files(rebuild=True, img_size=512, limit_records=5000)

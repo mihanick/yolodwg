@@ -53,7 +53,7 @@ def build_data(rebuild=False, img_size=512, limit_records=None):
 
     return df, result_ids
 
-def query_collection_to_dataframe(db=None, group_id=None, max_entities=400, min_entities=8):
+def query_collection_to_dataframe(db=None, group_id=None, max_entities=250, min_entities=8):
     '''
     Queries mongo objects collection to dataframe.
     Expands certain columns, like StartPoint to StartPoint.X, StartPoint.Y
@@ -84,6 +84,11 @@ def query_collection_to_dataframe(db=None, group_id=None, max_entities=400, min_
     query = {'GroupId' : group_id}
     all_entities = list(objects.find(query))
 
+    # filter out tables and schemes that doesn't contain annotations
+    not_text_line = {'GroupId':group_id, 'ClassName':{'$nin':['Line', 'Text', 'Entity', 'Hatch', 'Polyline','AcDbBlockReference','Circle']}}
+    if objects.count(not_text_line) == 0:
+        return
+
     # check number of entities per fragment
     if (len(all_entities) < min_entities or len(all_entities) > max_entities):
         return
@@ -96,8 +101,8 @@ def query_collection_to_dataframe(db=None, group_id=None, max_entities=400, min_
     drawing_annotations = list(objects.find(query_annotations))
 
     #check group_id contain annotations
-    if len(drawing_annotations) == 0:
-        return
+    #if len(drawing_annotations) == 0:
+    #    return
 
     # now we create dataframe
     df = pd.DataFrame(drawing_annotations)
@@ -135,6 +140,8 @@ def query_collection_to_dataframe(db=None, group_id=None, max_entities=400, min_
         bound_max_y = fragment['MaxBoundPoint']['Y']
         # we normalize dataframe
         df = normalize(df=df, base_pnt_x=bound_min_x, base_pnt_y=bound_min_y, diff_x=bound_max_x - bound_min_x, diff_y=bound_max_y - bound_min_y)
+
+        print('group_id: {} df len: {}'.format(group_id, len(df)))
 
         return df[dataframe_cols]
 

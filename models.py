@@ -365,7 +365,7 @@ def CalculatePrediction(batch_of_images, model=None):
 
     model.eval()
 
-    conf_thres = 0.7
+    conf_thres = 0.9
     nms_thres = 0.05
 
     detections = model(batch_of_images)
