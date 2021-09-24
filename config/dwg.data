@@ -1,6 +1,0 @@
-classes=4
-train=data/dwg/train.txt
-valid=data/dwg/val.txt
-names=config/dwg.names
-backup=backup/
-
