@@ -363,3 +363,4 @@ ids.txt
 dataset.pickle
 data/dwg/train.txt
 data/dwg/val.txt
+runs

@@ -124,4 +124,4 @@ def create_yolo_dataset_files(rebuild=False, generate_images=True, generate_labe
                         
         print("Max labels per image: ", max_labels)
 if __name__ == "__main__":
-    create_yolo_dataset_files(rebuild=True, img_size=512, limit_records=5000)
+    create_yolo_dataset_files(rebuild=True, img_size=512, limit_records=100)
