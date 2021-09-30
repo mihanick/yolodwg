@@ -1,8 +1,0 @@
-path: data/dwg  # dataset root dir
-train: data/dwg/train.txt   #abs path to start folder
-val: data/dwg/val.txt
-test: 
-
-# Classes
-nc: 4   # number of classes
-names: [ '++', '+-', '--', '-+' ]  # class names

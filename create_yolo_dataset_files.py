@@ -1,3 +1,4 @@
+from logging import root
 from pathlib import Path
 import numpy as np
 
@@ -6,7 +7,7 @@ from processing import build_data
 import pandas as pd
 from PIL import Image
 import os
-from shutil import copyfile
+import yaml
 
 #################################################################
 def create_yolo_dataset_files(rebuild=False, generate_images=True, generate_labels=True, img_size=512, limit_records=None):
@@ -16,21 +17,24 @@ def create_yolo_dataset_files(rebuild=False, generate_images=True, generate_labe
 
         np.random.seed(42)
         np.random.shuffle(ids)
+        dataset_name = f"dwg{img_size}"
+        root_path = Path(f"data/{dataset_name}")
+        root_path.mkdir(parents=True,exist_ok=True)
 
-        train_images_path = Path("data/dwg/images/train")
+        train_images_path = root_path / "images/train"
         train_images_path.mkdir(parents=True, exist_ok=True)
-        train_labels_path = Path("data/dwg/labels/train")
+        train_labels_path = root_path/ "labels/train"
         train_labels_path.mkdir(parents=True, exist_ok=True)
-        train_desc_file_path = "data/dwg/train.txt"
+        train_desc_file_path = root_path / "train.txt"
 
-        val_images_path = Path("data/dwg/images/val")
+        val_images_path =  root_path /"images/val"
         val_images_path.mkdir(parents=True, exist_ok=True)
-        val_labels_path = Path("data/dwg/labels/val")
+        val_labels_path =  root_path / "labels/val"
         val_labels_path.mkdir(parents=True, exist_ok=True)
-        val_desc_file_path = "data/dwg/val.txt"
+        val_desc_file_path = root_path / "val.txt"
 
         # folder for images with plotted annotations
-        test_images_path = Path("data/dwg/images/test")
+        test_images_path = root_path / "images/test"
         test_images_path.mkdir(parents=True, exist_ok=True)
 
         max_labels = 0
@@ -68,7 +72,6 @@ def create_yolo_dataset_files(rebuild=False, generate_images=True, generate_labe
                                                 # so we have to shift by y size difference
                                                 trg.paste(src, (0, max_size - src.size[1]))
                                                 trg.save(trgt_img_path)
-
 
                                         # ResaveAsSquareSize(source_img_stripped, image_file_name)
                                         # ResaveAsSquareSize(source_image_annotated, image_with_annotations_file_name)
@@ -119,9 +122,20 @@ def create_yolo_dataset_files(rebuild=False, generate_images=True, generate_labe
 
                                         if max_labels < len(labels):
                                                 max_labels = len(labels)
-                                                
 
-                        
+        # save yaml
+        dwg_dataset_dict = {
+                "path": ".",
+                "train": str(train_desc_file_path),
+                "val": str(val_desc_file_path),
+                "test": "",
+                "nc": 4,   # number of classes
+                "names": [ '++', '+-', '--', '-+' ]  }
+
+        with open( f'data/{dataset_name}/{dataset_name}.yaml', 'w') as f:
+                yaml.safe_dump(dwg_dataset_dict, f, sort_keys=False)
+
         print("Max labels per image: ", max_labels)
+
 if __name__ == "__main__":
-    create_yolo_dataset_files(rebuild=True, img_size=512, limit_records=100)
+    create_yolo_dataset_files(rebuild=True, img_size=512, limit_records=1200)

@@ -363,7 +363,8 @@ ids.txt
 dataset.pickle
 data/*/train.txt
 data/*/val.txt
-runs
-
+data/*/dwg*.yaml
 data/images.zip
+
 *.pt
+runs
