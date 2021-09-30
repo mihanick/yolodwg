@@ -56,6 +56,7 @@ def create_yolo_dataset_files(rebuild=False, generate_images=True, generate_labe
                                 image_with_annotations_file_name = "{}/{}.{}".format(str(test_images_path), group_id, image_format)
                                 if generate_images:
                                         #source_img_stripped = df[(df['GroupId'] == group_id)]['StrippedFileName'].iloc[0]
+                                        source_img_stripped = f'./data/images/stripped_{group_id}.png'
                                         #source_image_annotated = df[(df['GroupId'] == group_id)]['AnnotatedFileName'].iloc[0]
                                         source_image_annotated = f'./data/images/annotated_{group_id}.png'
                                         def ResaveAsSquareSize(src_img_path, trgt_img_path):
@@ -73,9 +74,9 @@ def create_yolo_dataset_files(rebuild=False, generate_images=True, generate_labe
                                                 trg.paste(src, (0, max_size - src.size[1]))
                                                 trg.save(trgt_img_path)
 
-                                        # ResaveAsSquareSize(source_img_stripped, image_file_name)
+                                        ResaveAsSquareSize(source_img_stripped, image_file_name)
                                         # ResaveAsSquareSize(source_image_annotated, image_with_annotations_file_name)
-                                        ResaveAsSquareSize(source_image_annotated, image_file_name)
+                                        # ResaveAsSquareSize(source_image_annotated, image_file_name)
 
                                 desc_file.write("{}\n".format(image_file_name))
 
@@ -138,4 +139,4 @@ def create_yolo_dataset_files(rebuild=False, generate_images=True, generate_labe
         print("Max labels per image: ", max_labels)
 
 if __name__ == "__main__":
-    create_yolo_dataset_files(rebuild=True, img_size=512, limit_records=1200)
+    create_yolo_dataset_files(rebuild=True, img_size=512, limit_records=400)

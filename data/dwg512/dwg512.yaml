@@ -1,0 +1,10 @@
+path: .
+train: data/dwg512/train.txt
+val: data/dwg512/val.txt
+test: ''
+nc: 4
+names:
+- ++
+- +-
+- --
+- -+
