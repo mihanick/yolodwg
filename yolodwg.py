@@ -4,6 +4,7 @@ from tqdm import tqdm
 import numpy as np
 import pandas as pd
 import time
+from pathlib import Path
 
 import torch
 import torch.nn as nn
@@ -174,13 +175,26 @@ class DwgKeyPointsModel(nn.Module):
         return out
 #------------------------------
 
+def save_checkpoint(model, optimizer, loss, checkpoint_path, precision=0, recall=0, f1=0):
+    
+    dir = Path(checkpoint_path)
+    dir.parent.mkdir(parents=True, exist_ok=True)
+
+    torch.save({
+        'model_state_dict':model.state_dict(),
+        'optimizer_state_dict': optimizer.state_dict(),
+        'loss':loss,
+        'precision': precision,
+        'recall': recall,
+        'f1':f1
+    }, checkpoint_path)
+
 def run(
         batch_size=4,
         epochs=20,
         img_size=512,
         limit_records=None,
-        checkpoint_interval=1,
-        checkpoint_dir="checkpoints",
+        checkpoint_interval=10,
         lr=0.001
     ):
 
@@ -220,8 +234,8 @@ def run(
 
     start = time.time()
 
-    best_recall = 0
-    best_precision = 0
+    best_recall = 0.0
+    best_precision = 0.0
 
     def train_epoch(model, loader):
         model.train()
@@ -269,26 +283,31 @@ def run(
                 out = model(imgs)
                 loss = criterion(out, targets)
                 running_loss += loss.item()
-        return running_loss / counter
-        
+        return running_loss / counter, 0, 0, 0
+
     for epoch in range(epochs):
         train_loss = train_epoch(model, train_loader)
-        val_loss = val_epoch(model, val_loader)
+        val_loss, precision, recall, f1 = val_epoch(model, val_loader)
 
-        print(f'[{epoch}/{epochs}]@{time.time()-start:.0f}s train loss: {train_loss:.4f} val_loss:{val_loss:.4f}')
+        print(f'[{epoch}/{epochs}]@{(time.time() - start):.0f}s train loss: {train_loss:.4f} val_loss:{val_loss:.4f} precision: {precision:.4f} recall: {recall:.4f} f1: {f1:.4f}')
 
         tb.add_scalar("train loss", train_loss, epoch)
         tb.add_scalar("val loss", val_loss, epoch)
+        tb.add_scalar("precision", precision, epoch)
+        tb.add_scalar("recall", recall, epoch)
+        tb.add_scalar("f1", f1, epoch)
+
         # TODO: display images in tb
 
-# TODO: save checkpoint
-#        if epoch % checkpoint_interval == 0:
-#            model.save_weights("%s/%d.weights" % (checkpoint_dir, epoch))
-#        if model.losses['recall'] > best_recall and model.losses['precision'] > best_precision:
-#            best_precision = model.losses['precision']
-#            best_recall = model.losses['recall']
-#            model.save_weights(checkpoint_dir + "/best.weights")
-#            print("best recall: {0:.4f} best precision: {1:.4f}".format(best_recall, best_precision))
+        if checkpoint_interval is not None:
+            if epoch % checkpoint_interval == 0:
+                save_checkpoint(model, optimizer, criterion, checkpoint_path=f'{tb_log_path}/checkpoint{epoch}.weights', precision=precision, recall=recall, f1=f1)
+            
+        if recall >= best_recall and precision >= best_precision:
+            best_precision = precision
+            best_recall = recall
+            save_checkpoint(model, optimizer, criterion, checkpoint_path=f'{tb_log_path}/best.weights', precision=precision, recall=recall, f1=f1)
+            # print(f"Best recall: {best_recall:.4f} Best precision: {best_precision:.4f}")
 
 
 # TODO: inference
@@ -298,6 +317,7 @@ def run(
 # TODO: calculate precision
 # TODO: parse arguments
 # TODO: play with architecture, fully convolutional resnet50
+# TODO: augment: rotate, flip, crop
 
 if __name__ == "__main__":
     run(batch_size=32, img_size=64, limit_records=300, epochs=300, checkpoint_interval=None)
