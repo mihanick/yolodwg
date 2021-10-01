@@ -28,7 +28,7 @@ from torch.utils.data import Dataset, SubsetRandomSampler
 
 class EntityDataset(Dataset):
     def __init__(self, img_size=512, limit_records=None):
-        df, ids = build_data(rebuild=False, img_size=img_size, limit_records=limit_records)
+        df, ids = build_data(rebuild=True, img_size=img_size, limit_records=limit_records)
 
         self.max_labels = 0
         self.img_size = img_size
@@ -287,4 +287,4 @@ def run(
 #            print("best recall: {0:.4f} best precision: {1:.4f}".format(best_recall, best_precision))
 
 if __name__ == "__main__":
-    run(batch_size=128, img_size=128, limit_records=600, epochs=300)
+    run(batch_size=64, img_size=512, limit_records=3000, epochs=300)
