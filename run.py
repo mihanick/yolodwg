@@ -1,15 +1,12 @@
 '''
 main runner from console
 '''
-# https://towardsdatascience.com/training-yolo-for-object-detection-in-pytorch-with-your-custom-dataset-the-simple-way-1aa6f56cf7d9
+# https://debuggercafe.com/getting-started-with-facial-keypoint-detection-using-pytorch/
 
-from __future__ import division
-
-from utils.utils import *
-from utils.datasets import *
-from utils.parse_config import *
 from main import run
 import argparse
+import torch
+
 
 
 # https://stackoverflow.com/questions/63268967/configure-pycharm-debugger-to-display-array-tensor-shape

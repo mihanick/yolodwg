@@ -200,21 +200,22 @@ def run(
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     tb = SummaryWriter(tb_log_path)
 
+    # enable gpu if possible
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
+    # create dataset
     dwg_dataset = DwgDataset(batch_size=batch_size, img_size=img_size, limit_records=limit_records)
 
     train_loader = dwg_dataset.train_loader
     val_loader   = dwg_dataset.val_loader
     test_loader  = dwg_dataset.test_loader
 
-
+    # create model
     model = DwgKeyPointsModel(max_coords=dwg_dataset.entities.max_labels * dwg_dataset.entities.num_coordinates)
     model.to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
-
     criterion = nn.MSELoss()
 
     start = time.time()
@@ -256,6 +257,7 @@ def run(
         running_loss = 0.0
         counter = 0
         with torch.no_grad():
+            # TODO: tqdm desc and total
             for batch_i, (imgs, targets) in tqdm(enumerate(loader)):
                 counter += 1
 
@@ -273,11 +275,13 @@ def run(
         train_loss = train_epoch(model, train_loader)
         val_loss = val_epoch(model, val_loader)
 
-        print(f'[{epoch}/{epochs}]@{time.time()-start}s train loss: {train_loss} val_loss:{val_loss}')
+        print(f'[{epoch}/{epochs}]@{time.time()-start:.0f}s train loss: {train_loss:.4f} val_loss:{val_loss:.4f}')
 
         tb.add_scalar("train loss", train_loss, epoch)
         tb.add_scalar("val loss", val_loss, epoch)
+        # TODO: display images in tb
 
+# TODO: save checkpoint
 #        if epoch % checkpoint_interval == 0:
 #            model.save_weights("%s/%d.weights" % (checkpoint_dir, epoch))
 #        if model.losses['recall'] > best_recall and model.losses['precision'] > best_precision:
@@ -286,5 +290,14 @@ def run(
 #            model.save_weights(checkpoint_dir + "/best.weights")
 #            print("best recall: {0:.4f} best precision: {1:.4f}".format(best_recall, best_precision))
 
+
+# TODO: inference
+# TODO: plots
+# TODO: generate points by triades
+# TODO: cache images in dataset
+# TODO: calculate precision
+# TODO: parse arguments
+# TODO: play with architecture, fully convolutional resnet50
+
 if __name__ == "__main__":
-    run(batch_size=64, img_size=512, limit_records=3000, epochs=300)
+    run(batch_size=32, img_size=64, limit_records=300, epochs=300)

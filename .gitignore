@@ -357,14 +357,9 @@ utils/.ipynb_checkpoints/utils-checkpoint.py
 
 # exclude data
 data/images/*.*
-data/*/images/*
-data/*/labels/*
 ids.txt
 dataset.pickle
-data/*/train.txt
-data/*/val.txt
-data/*/dwg*.yaml
+
 data/images.zip
 
-*.pt
 runs
