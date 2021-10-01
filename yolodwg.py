@@ -28,7 +28,7 @@ from torch.utils.data import Dataset, SubsetRandomSampler
 
 class EntityDataset(Dataset):
     def __init__(self, img_size=512, limit_records=None):
-        df, ids = build_data(rebuild=True, img_size=img_size, limit_records=limit_records)
+        df, ids = build_data(rebuild=False, img_size=img_size, limit_records=limit_records)
 
         self.max_labels = 0
         self.img_size = img_size
@@ -192,7 +192,7 @@ def run(
         for dirno in dir[1]:
             if dirno.isdigit():
                 no = int(dirno)
-                if no > run_number:
+                if no >= run_number:
                     run_number = no + 1
     tb_log_path = f'{runs_dir}/{run_number}'
 
@@ -300,4 +300,4 @@ def run(
 # TODO: play with architecture, fully convolutional resnet50
 
 if __name__ == "__main__":
-    run(batch_size=32, img_size=64, limit_records=300, epochs=300)
+    run(batch_size=32, img_size=64, limit_records=300, epochs=300, checkpoint_interval=None)
