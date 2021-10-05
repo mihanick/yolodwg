@@ -325,7 +325,9 @@ def run(
         should_save_checkpoint = (checkpoint_interval is not None and epoch % checkpoint_interval == 0) or last_epoch
         if should_save_checkpoint:
             save_checkpoint(model, optimizer, criterion, checkpoint_path=f'{tb_log_path}/checkpoint{epoch}.weights', precision=precision, recall=recall, f1=f1)
-            plot_loader_predictions(loader=val_loader, model=model, epoch=epoch, plot_folder=tb_log_path)
+            # Display generated figure in tensorboard
+            fig = plot_loader_predictions(loader=val_loader, model=model, epoch=epoch, plot_folder=tb_log_path)
+            tb.add_figure('predicted', fig, epoch)
 
         if recall >= best_recall and precision >= best_precision:
             best_precision = precision
@@ -335,14 +337,28 @@ def run(
 
         print(f'[{epoch}/{epochs}]@{(time.time() - start):.0f}s train loss: {train_loss:.4f} val_loss:{val_loss:.4f} precision: {precision:.4f} recall: {recall:.4f} f1: {f1:.4f}')
 
-        tb.add_scalar("train loss", train_loss, epoch)
-        tb.add_scalar("val loss", val_loss, epoch)
-        tb.add_scalar("precision", precision, epoch)
-        tb.add_scalar("recall", recall, epoch)
-        tb.add_scalar("f1", f1, epoch)
+        tb.add_scalar("loss/train", train_loss, epoch)
+        tb.add_scalar("loss/val", val_loss, epoch)
+        tb.add_scalar("accuracy/precision", precision, epoch)
+        tb.add_scalar("accuracy/recall", recall, epoch)
+        tb.add_scalar("accuracy/f1", f1, epoch)
+        
+    tb.close()
 
-        # TODO: display images in tb
+def plot_val_dataset():
+    dwg_dataset = DwgDataset(batch_size=4, img_size=128, limit_records=50, rebuild=False)
 
+    train_loader = dwg_dataset.train_loader
+    val_loader   = dwg_dataset.val_loader
+
+    chp_path = 'runs/1/best.weights'
+    checkpoint = torch.load(chp_path)
+    max_points = checkpoint['max_points']
+    num_coordinates = checkpoint['num_coordinates']
+    model = DwgKeyPointsModel(max_points=max_points, num_coordinates=num_coordinates).to(config.device)
+    model.load_state_dict(checkpoint['model_state_dict'])
+    
+    return plot_loader_predictions(val_loader, model)
 # TODO: generate points by triades
 # TODO: cache images in dataset
 # TODO: calculate precision
@@ -352,9 +368,9 @@ def run(
 
 if __name__ == "__main__":
     run(
-        batch_size=4, 
-        img_size=128, 
-        limit_records=50, 
+        batch_size=4,
+        img_size=128,
+        limit_records=50,
         rebuild=False,
-        epochs=30, 
-        checkpoint_interval=None)
+        epochs=10,
+        checkpoint_interval=5)

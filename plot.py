@@ -6,22 +6,6 @@ import numpy as np
 import math
 import torch
 import config
-from yolodwg import DwgDataset, DwgKeyPointsModel
-
-def plot_val_dataset():
-    dwg_dataset = DwgDataset(batch_size=4, img_size=128, limit_records=50, rebuild=False)
-
-    train_loader = dwg_dataset.train_loader
-    val_loader   = dwg_dataset.val_loader
-
-    chp_path = 'runs/1/best.weights'
-    checkpoint = torch.load(chp_path)
-    max_points = checkpoint['max_points']
-    num_coordinates = checkpoint['num_coordinates']
-    model = DwgKeyPointsModel(max_points=max_points, num_coordinates=num_coordinates).to(config.device)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    
-    return plot_loader_predictions(val_loader, model)
 
 def plot_loader_predictions(loader, model, epoch=0, plot_folder=None):
     
@@ -39,7 +23,7 @@ def plot_loader_predictions(loader, model, epoch=0, plot_folder=None):
             out = model(imgs)
             out = out.view((out.shape[0], model.max_points, -1))
 
-            graphic = plot_batch_grid(
+            fig = plot_batch_grid(
                                 input_images=imgs,
                                 true_keypoints=targets,
                                 predictions=out,
@@ -47,7 +31,7 @@ def plot_loader_predictions(loader, model, epoch=0, plot_folder=None):
 
             if i > 3:
                 break
-    return graphic
+    return fig
 
 def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_save_file=None):
     '''
@@ -61,7 +45,7 @@ def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_sa
     batch_size = input_images.shape[0]
     grid_size = int(math.sqrt(batch_size))
 
-    plt.figure(figsize=(10, 10))
+    fig = plt.figure(figsize=(10, 10))
     for i, img in enumerate(input_images):
         if i > grid_size * grid_size:
             break
@@ -81,7 +65,7 @@ def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_sa
         plt.savefig(plot_save_file)
 
     plt.axis('off')
-    return plt
+    return fig
 
 def plot_image_prediction_truth(input_image, predicted_keypoints=None, true_keypoints=None):
     '''
