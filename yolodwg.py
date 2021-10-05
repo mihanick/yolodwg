@@ -186,7 +186,8 @@ def save_checkpoint(model, optimizer, loss, checkpoint_path, precision=0, recall
     dir.parent.mkdir(parents=True, exist_ok=True)
 
     torch.save({
-        'max_coords':model.max_coords,
+        'max_points':model.max_points,
+        'num_coordinates':model.num_coordinates,
         'model_state_dict':model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'loss':loss,
@@ -341,10 +342,6 @@ def run(
         tb.add_scalar("f1", f1, epoch)
 
         # TODO: display images in tb
-
-
-
-# TODO: inference
 
 # TODO: generate points by triades
 # TODO: cache images in dataset
