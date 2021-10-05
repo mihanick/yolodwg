@@ -1,4 +1,3 @@
-import enum
 import os
 from tqdm import tqdm
 import numpy as np
@@ -9,7 +8,7 @@ from pathlib import Path
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
-from torch.cuda import device
+
 from torch.utils.tensorboard import SummaryWriter
 import torchvision.models as models
 from torch.optim.lr_scheduler import StepLR
@@ -17,19 +16,31 @@ from torch.optim.lr_scheduler import StepLR
 from PIL import Image
 
 from processing import build_data
-
-# https://stackoverflow.com/questions/63268967/configure-pycharm-debugger-to-display-array-tensor-shape
-old_repr = torch.Tensor.__repr__
-def tensor_info(tensor):
-    return repr(tensor.shape)[6:] + ' ' + repr(tensor.dtype)[6:] + '@' + str(tensor.device) + '\n' + old_repr(tensor)
-torch.Tensor.__repr__ = tensor_info
+from plot import plot_batch_grid, plot_loader_predictions
+import config
 
 #------------------------------
 from torch.utils.data import Dataset, SubsetRandomSampler
 
+def open_square(src_img_path):
+    '''
+    https://jdhao.github.io/2017/11/06/resize-image-to-square-with-padding/
+    '''
+    src = Image.open(src_img_path)
+    max_size = max(src.size)
+    trg = Image.new("RGBA", (max_size, max_size))
+
+    # http://espressocode.top/python-pil-paste-and-rotate-method/
+    # image is pasted using top left coords
+    # while drawing coordinate system 0,0 is bottom left
+    # so we have to shift by y size difference
+    trg.paste(src, (0, max_size - src.size[1]))
+    return trg, max_size
+
+
 class EntityDataset(Dataset):
-    def __init__(self, img_size=512, limit_records=None):
-        df, ids = build_data(rebuild=False, img_size=img_size, limit_records=limit_records)
+    def __init__(self, img_size=512, rebuild=False, limit_records=None):
+        df, ids = build_data(rebuild=rebuild, img_size=img_size, limit_records=limit_records)
 
         self.max_labels = 0
         self.img_size = img_size
@@ -48,8 +59,8 @@ class EntityDataset(Dataset):
         for group_no, group_id in tqdm(enumerate(ids)):
             source_image_annotated = f'./data/images/annotated_{group_id}.png'
             source_image_stripped = f'./data/images/stripped_{group_id}.png'
-            img, max_size = self.open_square(source_image_stripped)
-            img = img.resize((img_size,img_size))
+            img, max_size = open_square(source_image_stripped)
+            img = img.resize((img_size, img_size))
             # self.num_image_channels = max(self.num_image_channels, img.getchannel())
 
             for class_id, class_name in enumerate(self.classes):
@@ -57,39 +68,29 @@ class EntityDataset(Dataset):
                 dim_count = len(dims)
 
                 # [class_id, dim_id, pnt_id, x, y, good?]
-                labels = np.zeros([dim_count, 1 + 1 + self.num_coordinates + 1], dtype=np.float)
+                labels = np.zeros([dim_count * len(self.pnt_classes), 1 + 1 + self.num_coordinates + 1], dtype=np.float)
                 # labels = np.zeros([dim_count, self.num_classes, self.num_pnt_classes, self.num_coordinates], dtype=np.float)
-                
+
+                label_row_counter = 0
                 for dim_no, dim_row in dims.iterrows():
-                    
-                    labels[dim_no, 0] = class_id # AlignedDimension
                     for pnt_id, pnt_class in enumerate(self.pnt_classes):
-                        
-                        labels[dim_no, 1] = pnt_id
+                        labels[label_row_counter, 0] = class_id # AlignedDimension
+                        labels[label_row_counter, 1] = pnt_id
                         for coord_id, coord_name in enumerate(self.coordinates):
-                            labels[dim_no, 1 + 1 + coord_id] = dim_row[f'{pnt_class}.{coord_name}'] #  ['XLine1Point','XLine2Point','DimLinePoint'].[X,Y]
+                            coordval = dim_row[f'{pnt_class}.{coord_name}'] #  ['XLine1Point','XLine2Point','DimLinePoint'].[X,Y]
+                            labels[label_row_counter, 1 + 1 + coord_id] = coordval
+                        labels[label_row_counter, 1 + 1 + self.num_coordinates] = 0 # good
+                        label_row_counter += 1
 
-                    labels[dim_no, 1 + 1 + self.num_coordinates] = 0 # good
+                # remember maximum number of points
+                if label_row_counter > self.max_labels:
+                    self.max_labels = label_row_counter
 
-            labels /= max_size
-            if dim_count > self.max_labels:
-                self.max_labels = dim_count
+            labels[:, 2:4] /= img_size # scale coordinates to [0..1]
+            labels[:, 3] = 1- labels[:, 3] # invert y coord as on the drawing it will be from top left, not from bottom left
             self.data.append((np.array(img), labels))
 
-    def open_square(self, src_img_path):
-        '''
-        https://jdhao.github.io/2017/11/06/resize-image-to-square-with-padding/
-        '''
-        src = Image.open(src_img_path)
-        max_size = max(src.size)
-        trg = Image.new("RGBA", (max_size, max_size))
-
-        # http://espressocode.top/python-pil-paste-and-rotate-method/
-        # image is pasted using top left coords
-        # while drawing coordinate system 0,0 is bottom left
-        # so we have to shift by y size difference
-        trg.paste(src, (0, max_size - src.size[1]))
-        return trg, max_size
+        print(f'Entity dataset. Images: {len(self.data)} Max points:{self.max_labels}')
 
     def __len__(self):
         return len(self.data)
@@ -99,30 +100,26 @@ class EntityDataset(Dataset):
         return img, lbl
 
 class DwgDataset:
-    def __init__(self, batch_size=4, img_size=512, limit_records=None):
+    def __init__(self, batch_size=4, img_size=512, limit_records=None, rebuild=False):
         self.batch_size = batch_size
 
-        self.entities = EntityDataset(img_size=img_size, limit_records=limit_records)
+        self.entities = EntityDataset(img_size=img_size, rebuild=rebuild, limit_records=limit_records)
         self.img_size = img_size
 
         data_len = len(self.entities)
 
         validation_fraction = 0.1
-        test_fraction       = 0.2
         np.random.seed(42)
 
         val_split  = int(np.floor(validation_fraction * data_len))
-        test_split = int(np.floor(test_fraction * data_len))
         indices = list(range(data_len))
         np.random.shuffle(indices)
 
         val_indices   = indices[:val_split]
-        test_indices  = indices[val_split:test_split]
-        train_indices = indices[test_split:]
+        train_indices = indices[val_split:]
 
         train_sampler = SubsetRandomSampler(train_indices)
         val_sampler   = SubsetRandomSampler(val_indices)
-        test_sampler  = SubsetRandomSampler(test_indices)
 
         # https://stackoverflow.com/questions/64586575/adding-class-objects-to-pytorch-dataloader-batch-must-contain-tensors
         def custom_collate(sample):
@@ -139,14 +136,21 @@ class DwgDataset:
 
         self.train_loader = torch.utils.data.DataLoader(self.entities, batch_size = batch_size, sampler = train_sampler, collate_fn=custom_collate, drop_last=False)
         self.val_loader   = torch.utils.data.DataLoader(self.entities, batch_size = batch_size, sampler = val_sampler, collate_fn=custom_collate, drop_last=False)
-        self.test_loader  = torch.utils.data.DataLoader(self.entities, batch_size = batch_size, sampler = test_sampler, collate_fn=custom_collate)       
+        
 #------------------------------
 
 #------------------------------
 class DwgKeyPointsModel(nn.Module):
-    def __init__(self, max_coords):
+    def __init__(self, max_points=100, num_coordinates=2):
+        '''
+        Regresses input images to
+        flattened max_points*num_coordinates predictions of keypoints
+        '''
         super(DwgKeyPointsModel, self).__init__()
-        self.max_coords = max_coords
+        self.max_points = max_points
+        self.num_coordinates = num_coordinates
+        self.max_coords = self.max_points * self.num_coordinates
+
         self.conv1 = nn.Conv2d(4, 32, kernel_size=5)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3)
         self.conv3 = nn.Conv2d(64, 128, kernel_size=3)
@@ -172,6 +176,7 @@ class DwgKeyPointsModel(nn.Module):
         x = self.dropout(x)
         out = self.fc1(x)
 
+        # TODO: force output to be in range [0..1]
         return out
 #------------------------------
 
@@ -181,6 +186,7 @@ def save_checkpoint(model, optimizer, loss, checkpoint_path, precision=0, recall
     dir.parent.mkdir(parents=True, exist_ok=True)
 
     torch.save({
+        'max_coords':model.max_coords,
         'model_state_dict':model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
         'loss':loss,
@@ -189,10 +195,68 @@ def save_checkpoint(model, optimizer, loss, checkpoint_path, precision=0, recall
         'f1':f1
     }, checkpoint_path)
 
+def train_epoch(model, loader, device, criterion, optimizer, scheduler):
+    model.train()
+
+    running_loss = 0.0
+    counter = 0
+
+    # TODO: tqdm desc and total
+    for _, (imgs, targets) in tqdm(enumerate(loader)):
+        counter += 1
+
+        imgs = imgs.to(device)
+        targets = targets.to(device)
+
+        # only coordinates, plus flatten
+        targets = targets[:, :, -3:-1]
+        targets = targets.reshape(targets.size(0), -1)
+
+        optimizer.zero_grad()
+
+        out = model(imgs)
+        loss = criterion(out, targets)
+        running_loss += loss.item()
+
+        loss.backward()
+        optimizer.step()
+        scheduler.step()
+    
+    return running_loss / counter
+
+def val_epoch(model, loader, device, criterion, epoch=0, plot_prediction=False, plot_folder=None):
+    model.eval()
+
+    running_loss = 0.0
+    counter = 0
+    with torch.no_grad():
+        for batch_i, (imgs, targets) in tqdm(enumerate(loader)):
+            counter += 1
+
+            imgs = imgs.to(device)
+            targets = targets.to(device)
+            targets = targets[:, :, -3:-1]
+            targets = targets.reshape(targets.size(0), -1)
+
+            out = model(imgs)
+            loss = criterion(out, targets)
+            running_loss += loss.item()
+
+            if plot_prediction and plot_folder is not None:
+                plot_batch_grid(
+                            input_images=imgs,
+                            true_keypoints=targets,
+                            predictions=out,
+                            plot_save_file=f'{plot_folder}/prediction_{epoch}.png')
+
+    # TODO: precision
+    return running_loss / counter, 0, 0, 0
+
 def run(
         batch_size=4,
         epochs=20,
         img_size=512,
+        rebuild=False,
         limit_records=None,
         checkpoint_interval=10,
         lr=0.001
@@ -218,14 +282,18 @@ def run(
     device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
 
     # create dataset
-    dwg_dataset = DwgDataset(batch_size=batch_size, img_size=img_size, limit_records=limit_records)
+    dwg_dataset = DwgDataset(
+                    batch_size=batch_size, 
+                    img_size=img_size, 
+                    limit_records=limit_records,
+                    rebuild=rebuild,
+                    )
 
     train_loader = dwg_dataset.train_loader
     val_loader   = dwg_dataset.val_loader
-    test_loader  = dwg_dataset.test_loader
 
     # create model
-    model = DwgKeyPointsModel(max_coords=dwg_dataset.entities.max_labels * dwg_dataset.entities.num_coordinates)
+    model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates)
     model.to(device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -237,57 +305,32 @@ def run(
     best_recall = 0.0
     best_precision = 0.0
 
-    def train_epoch(model, loader):
-        model.train()
-
-        running_loss = 0.0
-        counter = 0
-
-        for batch_i, (imgs, targets) in tqdm(enumerate(loader)):
-            counter += 1
-
-            imgs = imgs.to(device)
-            targets = targets.to(device)
-
-            # only coordinates, plus flatten
-            targets = targets[:, :, -3:-1]
-            targets = targets.reshape(targets.size(0), -1)
-
-            optimizer.zero_grad()
-
-            out = model(imgs)
-            loss = criterion(out, targets)
-            running_loss += loss.item()
-
-            loss.backward()
-            optimizer.step()
-            scheduler.step()
-        
-        return running_loss / counter
-
-    def val_epoch(model, loader):
-        model.eval()
-
-        running_loss = 0.0
-        counter = 0
-        with torch.no_grad():
-            # TODO: tqdm desc and total
-            for batch_i, (imgs, targets) in tqdm(enumerate(loader)):
-                counter += 1
-
-                imgs = imgs.to(device)
-                targets = targets.to(device)
-                targets = targets[:, :, -3:-1]
-                targets = targets.reshape(targets.size(0), -1)
-
-                out = model(imgs)
-                loss = criterion(out, targets)
-                running_loss += loss.item()
-        return running_loss / counter, 0, 0, 0
-
     for epoch in range(epochs):
-        train_loss = train_epoch(model, train_loader)
-        val_loss, precision, recall, f1 = val_epoch(model, val_loader)
+        train_loss = train_epoch(
+                                model=model,
+                                loader=train_loader,
+                                device=device,
+                                criterion=criterion,
+                                optimizer=optimizer,
+                                scheduler=scheduler)
+
+        val_loss, precision, recall, f1 = val_epoch(
+                                model=model,
+                                loader=val_loader,
+                                device=device,
+                                criterion=criterion)
+
+        last_epoch = (epoch == epochs - 1)
+        should_save_checkpoint = (checkpoint_interval is not None and epoch % checkpoint_interval == 0) or last_epoch
+        if should_save_checkpoint:
+            save_checkpoint(model, optimizer, criterion, checkpoint_path=f'{tb_log_path}/checkpoint{epoch}.weights', precision=precision, recall=recall, f1=f1)
+            plot_loader_predictions(loader=val_loader, model=model, epoch=epoch, plot_folder=tb_log_path)
+
+        if recall >= best_recall and precision >= best_precision:
+            best_precision = precision
+            best_recall = recall
+            save_checkpoint(model, optimizer, criterion, checkpoint_path=f'{tb_log_path}/best.weights', precision=precision, recall=recall, f1=f1)
+            # print(f"Best recall: {best_recall:.4f} Best precision: {best_precision:.4f}")
 
         print(f'[{epoch}/{epochs}]@{(time.time() - start):.0f}s train loss: {train_loss:.4f} val_loss:{val_loss:.4f} precision: {precision:.4f} recall: {recall:.4f} f1: {f1:.4f}')
 
@@ -299,19 +342,10 @@ def run(
 
         # TODO: display images in tb
 
-        if checkpoint_interval is not None:
-            if epoch % checkpoint_interval == 0:
-                save_checkpoint(model, optimizer, criterion, checkpoint_path=f'{tb_log_path}/checkpoint{epoch}.weights', precision=precision, recall=recall, f1=f1)
-            
-        if recall >= best_recall and precision >= best_precision:
-            best_precision = precision
-            best_recall = recall
-            save_checkpoint(model, optimizer, criterion, checkpoint_path=f'{tb_log_path}/best.weights', precision=precision, recall=recall, f1=f1)
-            # print(f"Best recall: {best_recall:.4f} Best precision: {best_precision:.4f}")
 
 
 # TODO: inference
-# TODO: plots
+
 # TODO: generate points by triades
 # TODO: cache images in dataset
 # TODO: calculate precision
@@ -320,4 +354,10 @@ def run(
 # TODO: augment: rotate, flip, crop
 
 if __name__ == "__main__":
-    run(batch_size=32, img_size=64, limit_records=300, epochs=300, checkpoint_interval=None)
+    run(
+        batch_size=4, 
+        img_size=128, 
+        limit_records=50, 
+        rebuild=False,
+        epochs=30, 
+        checkpoint_interval=None)

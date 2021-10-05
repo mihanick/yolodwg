@@ -47,7 +47,6 @@ def build_data(rebuild=False, img_size=512, limit_records=None):
 
     else:
         df = pd.read_pickle(pickle_file)
-        # df = normalize(df, to_size=img_size)
         with open(group_ids_file) as f:
             result_ids = f.read().splitlines()
 
