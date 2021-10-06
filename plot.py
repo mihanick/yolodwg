@@ -6,6 +6,7 @@ import numpy as np
 import math
 import torch
 import config
+from tqdm import tqdm
 
 def plot_loader_predictions(loader, model, epoch=0, plot_folder=None):
     
@@ -46,12 +47,15 @@ def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_sa
     grid_size = int(math.sqrt(batch_size))
     grid_size = min(4, grid_size)
 
-    fig = plt.figure(figsize=(10, 10))
-    for i, img in enumerate(input_images):
-        if i >= grid_size * grid_size:
+    fig = plt.figure(figsize=(20, 20))
+
+    progress_bar = tqdm(enumerate(input_images), total = len(input_images))
+    for i, img in progress_bar:
+        progress_bar.set_description(f'Plotting images grid: {i}')
+        if i + 1 >= grid_size * grid_size:
             break
-        img = img.detach().cpu().numpy()
-        if true_keypoints is not None: 
+        np_img = img.detach().cpu().numpy()
+        if true_keypoints is not None:
             tkp = true_keypoints[i].detach().cpu().numpy()
             tkp = np.reshape(tkp, (-1, 2))
         if predictions is not None:
@@ -59,10 +63,9 @@ def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_sa
             pred = np.reshape(pred, (-1, 2))
 
         plt.subplot(grid_size, grid_size, i + 1)
-        
-        plot_image_prediction_truth(img, pred, tkp)
+        plt.axis('off')
 
-    plt.axis('off')
+        plot_image_prediction_truth(np_img, pred, tkp)
 
     if plot_save_file is not None:
         plt.savefig(plot_save_file)
@@ -73,7 +76,7 @@ def plot_image_prediction_truth(input_image, predicted_keypoints=None, true_keyp
     Plots the predicted keypoints and
     actual keypoints for first image from batch
 
-    input_image single image np.array.size(image_size, image_size, num_channels=4)
+    input_image single image np.array.size(image_size, image_size, num_channels=num_channels)
     predicted_keypoints keypoint predictions for image np.array.size(max_points, 2[x,y])
     true_keypoints torch.tensor ground truth for image np.array.size(max_points, 2[x,y])
     y coordinates are calculated from top left corner
@@ -83,8 +86,9 @@ def plot_image_prediction_truth(input_image, predicted_keypoints=None, true_keyp
     returns pyplot graph
     '''
 
-    # single datapoint from batch
     img_size = input_image.shape[0]
+    #input_image *= 255
+    #input_image
     plt.imshow(input_image)
 
     if predicted_keypoints is not None:

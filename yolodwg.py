@@ -28,7 +28,7 @@ def open_square(src_img_path, to_size=512):
     Opens specified path. Gets image max_size
     Pastes opened at bottom-left of square max_size*max_size
     rescales image to to_size
-    
+
     returns numpy array with 3 channels
     '''
     src = Image.open(src_img_path)
@@ -100,7 +100,9 @@ class EntityDataset(Dataset):
         if recreate_cache:
             df, ids = build_data(rebuild=rebuild, img_size=img_size, limit_records=limit_records)
             
-            for group_no, group_id in tqdm(enumerate(ids)):
+
+            progress_bar = tqdm(enumerate(ids))
+            for group_no, group_id in progress_bar:
                 source_image_annotated = f'./data/images/annotated_{group_id}.png'
                 source_image_stripped = f'./data/images/stripped_{group_id}.png'
                 img, max_size = open_square(source_image_stripped, to_size=self.img_size)
@@ -133,6 +135,7 @@ class EntityDataset(Dataset):
                 labels[:, 3] = 1 - labels[:, 3] # invert y coord as on the drawing it will be from top left, not from bottom left
                 self.data.append((img, labels))
 
+                progress_bar.set_description(f'Gathering dataset. max labels: {self.max_labels}. {group_id}: labels: {label_row_counter}')
             # save creaed data as cache
             if use_cache:
                 torch.save({'img_size':self.img_size, 'max_labels': self.max_labels, 'data':self.data}, self.cached_data_file)
@@ -225,10 +228,10 @@ class DwgKeyPointsModel(nn.Module):
         x = self.fc1(x)
 
         # force output to be in range [0..1]
-        xmin = torch.min(x).item()
-        xmax = torch.max(x).item()
-        x -= xmin
-        x /= (xmax - xmin + 1e-12) # avoid zero
+        #xmin = torch.min(x).item()
+        #xmax = torch.max(x).item()
+        #x -= xmin
+        #x /= (xmax - xmin + 1e-12) # avoid zero
 
         return x
 #------------------------------
@@ -255,9 +258,10 @@ def train_epoch(model, loader, device, criterion, optimizer, scheduler):
     running_loss = 0.0
     counter = 0
 
-    # TODO: tqdm desc and total
-    for _, (imgs, targets) in tqdm(enumerate(loader)):
+    progress_bar = tqdm(enumerate(loader), total=len(loader))
+    for _, (imgs, targets) in progress_bar:
         counter += 1
+        progress_bar.set_description(f'Training. Running loss: {running_loss / counter:.4f}')
 
         imgs = imgs.to(device)
         targets = targets.to(device)
@@ -271,6 +275,14 @@ def train_epoch(model, loader, device, criterion, optimizer, scheduler):
         out = model(imgs)
         loss = criterion(out, targets)
         running_loss += loss.item()
+
+        #debug plot
+        #if counter == 1:
+        #    plot_batch_grid(
+        #                input_images=imgs,
+        #                true_keypoints=targets,
+        #                predictions=out,
+        #                plot_save_file=f'runs/train.png')
 
         loss.backward()
         optimizer.step()
@@ -286,9 +298,12 @@ def val_epoch(model, loader, device, criterion, epoch=0, plot_prediction=False, 
     with torch.no_grad():
         valid = []
 
-        for batch_i, (imgs, ground_truth) in tqdm(enumerate(loader)):
+        progress_bar = tqdm(enumerate(loader), total=len(loader))
+        for batch_i, (imgs, ground_truth) in progress_bar:
             batch_size = ground_truth.shape[0]
             counter += 1
+
+            progress_bar.set_description(f"Validating epoch {epoch}. Runnning loss: {running_loss / counter:.4f}")
 
             imgs = imgs.to(device)
             targets = ground_truth[:, :, -3:-1]
@@ -378,7 +393,7 @@ def run(
     # create dataset
     dwg_dataset = DwgDataset(
                     batch_size=batch_size,
-                    img_size=img_size, 
+                    img_size=img_size,
                     limit_records=limit_records,
                     rebuild=rebuild,
                     use_cache=use_cache,
@@ -413,7 +428,8 @@ def run(
                                 model=model,
                                 loader=val_loader,
                                 device=config.device,
-                                criterion=criterion)
+                                criterion=criterion,
+                                epoch=epoch)
 
         last_epoch = (epoch == epochs - 1)
         should_save_checkpoint = (checkpoint_interval is not None and epoch % checkpoint_interval == 0) or last_epoch
@@ -436,7 +452,7 @@ def run(
         tb.add_scalar("accuracy/precision", precision, epoch)
         #tb.add_scalar("accuracy/recall", recall, epoch)
         #tb.add_scalar("accuracy/f1", f1, epoch)
-    print(f'Training achieved best recall: {best_recall} best precision: {best_precision}. This run data is at {tb_log_path}')
+    print(f'[DONE] Training achieved best recall: {best_recall} best precision: {best_precision}. This run data is at "{tb_log_path}"')
     tb.close()
 
 def plot_val_dataset():
@@ -464,7 +480,7 @@ if __name__ == "__main__":
         batch_size=32,
         img_size=128,
         limit_records=300,
-        rebuild=True,
-        use_cache=True,
+        rebuild=False,
+        use_cache=False,
         epochs=10,
         checkpoint_interval=None)
