@@ -208,10 +208,15 @@ class DwgKeyPointsModel(nn.Module):
         bs, _, _, _ = x.shape
         x = F.adaptive_avg_pool2d(x, 1).reshape(bs, -1)
         x = self.dropout(x)
-        out = self.fc1(x)
+        x = self.fc1(x)
 
-        # TODO: force output to be in range [0..1]
-        return out
+        # force output to be in range [0..1]
+        xmin = torch.min(x).item()
+        xmax = torch.max(x).item()
+        x -= xmin
+        x /= (xmax - xmin + 1e-12) # avoid zero
+
+        return x
 #------------------------------
 
 def save_checkpoint(model, optimizer, loss, checkpoint_path, precision=0, recall=0, f1=0):
@@ -310,7 +315,7 @@ def val_epoch(model, loader, device, criterion, epoch=0, plot_prediction=False, 
                         # bound box (min and max coordinates of all points of this dimension):
                         min_x, min_y, max_x, max_y = torch.min(points_of_same_dim[:, 2]), torch.min(points_of_same_dim[:, 3]), torch.max(points_of_same_dim[:, 2]), torch.max(points_of_same_dim[:, 3])
                         boundbox_diagonal = torch.sqrt((max_x - min_x) ** 2 + (max_y - min_y) ** 2)
-                        tolerance = 0.1 * boundbox_diagonal
+                        tolerance = 0.05 * boundbox_diagonal
 
                         # find all distances from current point to predictions
                         distances_from_current_point = torch.sqrt((prediction[:, 0] - pnt_x) ** 2 + (prediction[:, 1] - pnt_y) **2)
@@ -356,9 +361,6 @@ def run(
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     tb = SummaryWriter(tb_log_path)
 
-    # enable gpu if possible
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
     # create dataset
     dwg_dataset = DwgDataset(
                     batch_size=batch_size,
@@ -373,7 +375,7 @@ def run(
 
     # create model
     model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates)
-    model.to(device)
+    model.to(config.device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
@@ -388,7 +390,7 @@ def run(
         train_loss = train_epoch(
                                 model=model,
                                 loader=train_loader,
-                                device=device,
+                                device=config.device,
                                 criterion=criterion,
                                 optimizer=optimizer,
                                 scheduler=scheduler)
@@ -396,7 +398,7 @@ def run(
         val_loss, precision, recall, f1 = val_epoch(
                                 model=model,
                                 loader=val_loader,
-                                device=device,
+                                device=config.device,
                                 criterion=criterion)
 
         last_epoch = (epoch == epochs - 1)
@@ -420,7 +422,7 @@ def run(
         tb.add_scalar("accuracy/precision", precision, epoch)
         #tb.add_scalar("accuracy/recall", recall, epoch)
         #tb.add_scalar("accuracy/f1", f1, epoch)
-        
+    print(f'Training achieved best recall: {best_recall} best precision: {best_precision}. This run data is at {tb_log_path}')
     tb.close()
 
 def plot_val_dataset():
@@ -446,9 +448,9 @@ def plot_val_dataset():
 if __name__ == "__main__":
     run(
         batch_size=32,
-        img_size=64,
+        img_size=128,
         limit_records=300,
-        rebuild=False,
+        rebuild=True,
         use_cache=True,
-        epochs=30,
+        epochs=10,
         checkpoint_interval=None)
