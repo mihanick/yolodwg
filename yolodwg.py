@@ -22,25 +22,40 @@ import config
 #------------------------------
 from torch.utils.data import Dataset, SubsetRandomSampler
 
-def open_square(src_img_path):
+def open_square(src_img_path, to_size=512):
     '''
     https://jdhao.github.io/2017/11/06/resize-image-to-square-with-padding/
     Opens specified path. Gets image max_size
     Pastes opened at bottom-left of square max_size*max_size
+    rescales image to to_size
     
-    returns Image and its max_size
-
+    returns numpy array with 3 channels
     '''
     src = Image.open(src_img_path)
     max_size = max(src.size)
-    trg = Image.new("RGBA", (max_size, max_size))
+
+    # https://stackoverflow.com/questions/50898034/how-replace-transparent-with-a-color-in-pillow
+    trg = Image.new("RGB", (max_size, max_size), color=(255, 255, 255))
 
     # http://espressocode.top/python-pil-paste-and-rotate-method/
     # image is pasted using top left coords
     # while drawing coordinate system 0,0 is bottom left
     # so we have to shift by y size difference
-    trg.paste(src, (0, max_size - src.size[1]))
-    return trg, max_size
+    # 
+    # remove black background
+    # https://stackoverflow.com/questions/9166400/convert-rgba-png-to-rgb-with-pil
+    trg.paste(src, box=(0, max_size - src.size[1]), mask=src.split()[3])
+
+    trg = trg.convert('RGB')
+    trg = trg.resize((to_size, to_size))
+
+    #nsrc = np.array(src)
+    ntrg = np.array(trg)
+
+    #src.save('src.png')
+    #trg.save('trg.png')
+
+    return ntrg, max_size
 
 class EntityDataset(Dataset):
     '''
@@ -57,7 +72,7 @@ class EntityDataset(Dataset):
 
         self.max_labels = 0
         self.img_size = img_size
-        self.num_image_channels = 4
+        self.num_image_channels = 3
 
         self.classes = ['AlignedDimension']
         self.pnt_classes = ['XLine1Point', 'XLine2Point', 'DimLinePoint']
@@ -88,8 +103,7 @@ class EntityDataset(Dataset):
             for group_no, group_id in tqdm(enumerate(ids)):
                 source_image_annotated = f'./data/images/annotated_{group_id}.png'
                 source_image_stripped = f'./data/images/stripped_{group_id}.png'
-                img, max_size = open_square(source_image_stripped)
-                img = img.resize((img_size, img_size))
+                img, max_size = open_square(source_image_stripped, to_size=self.img_size)
                 # self.num_image_channels = max(self.num_image_channels, img.getchannel())
 
                 for class_id, class_name in enumerate(self.classes):
@@ -117,7 +131,7 @@ class EntityDataset(Dataset):
 
                 labels[:, 2:4] /= img_size # scale coordinates to [0..1]
                 labels[:, 3] = 1 - labels[:, 3] # invert y coord as on the drawing it will be from top left, not from bottom left
-                self.data.append((np.array(img), labels))
+                self.data.append((img, labels))
 
             # save creaed data as cache
             if use_cache:
@@ -162,20 +176,19 @@ class DwgDataset:
 
             for i in range(len(sample)):
                 img, lbl = sample[i]
-                imgs[i] = torch.from_numpy(img)
-                imgs /= 255
+                imgs[i] = torch.from_numpy(img) / 255
                 num_labels = lbl.shape[0]
                 lbls[i, :num_labels] = torch.from_numpy(lbl)
             return imgs, lbls
 
-        self.train_loader = torch.utils.data.DataLoader(self.entities, batch_size = batch_size, sampler = train_sampler, collate_fn=custom_collate, drop_last=False)
-        self.val_loader   = torch.utils.data.DataLoader(self.entities, batch_size = batch_size, sampler = val_sampler, collate_fn=custom_collate, drop_last=False)
+        self.train_loader = torch.utils.data.DataLoader(self.entities, batch_size=batch_size, sampler=train_sampler, collate_fn=custom_collate, drop_last=False)
+        self.val_loader   = torch.utils.data.DataLoader(self.entities, batch_size=batch_size, sampler=val_sampler, collate_fn=custom_collate, drop_last=False)
         
 #------------------------------
 
 #------------------------------
 class DwgKeyPointsModel(nn.Module):
-    def __init__(self, max_points=100, num_coordinates=2):
+    def __init__(self, max_points=100, num_coordinates=2, num_channels=3):
         '''
         Regresses input images to
         flattened max_points*num_coordinates predictions of keypoints
@@ -184,8 +197,9 @@ class DwgKeyPointsModel(nn.Module):
         self.max_points = max_points
         self.num_coordinates = num_coordinates
         self.max_coords = self.max_points * self.num_coordinates
+        self.num_channels = num_channels
 
-        self.conv1 = nn.Conv2d(4, 32, kernel_size=5)
+        self.conv1 = nn.Conv2d(self.num_channels, 32, kernel_size=5)
         self.conv2 = nn.Conv2d(32, 64, kernel_size=3)
         self.conv3 = nn.Conv2d(64, 128, kernel_size=3)
 
@@ -221,8 +235,8 @@ class DwgKeyPointsModel(nn.Module):
 
 def save_checkpoint(model, optimizer, loss, checkpoint_path, precision=0, recall=0, f1=0):
     
-    dir = Path(checkpoint_path)
-    dir.parent.mkdir(parents=True, exist_ok=True)
+    folder = Path(checkpoint_path)
+    folder.parent.mkdir(parents=True, exist_ok=True)
 
     torch.save({
         'max_points':model.max_points,
@@ -374,7 +388,7 @@ def run(
     val_loader   = dwg_dataset.val_loader
 
     # create model
-    model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates)
+    model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
     model.to(config.device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
