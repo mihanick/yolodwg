@@ -44,10 +44,11 @@ def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_sa
     '''
     batch_size = input_images.shape[0]
     grid_size = int(math.sqrt(batch_size))
+    grid_size = min(4, grid_size)
 
     fig = plt.figure(figsize=(10, 10))
     for i, img in enumerate(input_images):
-        if i > grid_size * grid_size:
+        if i >= grid_size * grid_size:
             break
         img = img.detach().cpu().numpy()
         if true_keypoints is not None: 
