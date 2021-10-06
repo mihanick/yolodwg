@@ -102,6 +102,9 @@ def query_collection_to_dataframe(db=None, group_id=None, img_size=512, max_enti
     #check group_id contain annotations
     #if len(drawing_annotations) == 0:
     #    return
+    # limit to 20 labels per image
+    if len(drawing_annotations) > 20:
+        return
 
     # now we create dataframe
     df = pd.DataFrame(drawing_annotations)
