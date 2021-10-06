@@ -42,12 +42,10 @@ def open_square(src_img_path):
     trg.paste(src, (0, max_size - src.size[1]))
     return trg, max_size
 
-# TODO: non-zero classes and dimnumbers
 class EntityDataset(Dataset):
     '''
     Dataset of images - labels (points of dimensions) 
     '''
-
     def __init__(self, img_size=512, rebuild=False, limit_records=None, use_cache=False):
         '''
         Dataset of images and
@@ -105,8 +103,8 @@ class EntityDataset(Dataset):
                     label_row_counter = 0
                     for dim_no, dim_row in dims.iterrows():
                         for pnt_id, pnt_class in enumerate(self.pnt_classes):
-                            labels[label_row_counter, 0] = class_id # AlignedDimension
-                            labels[label_row_counter, 1] = pnt_id
+                            labels[label_row_counter, 0] = class_id + 1 # AlignedDimension (nonzero)
+                            labels[label_row_counter, 1] = pnt_id + 1 # point_id (nonzero)
                             for coord_id, coord_name in enumerate(self.coordinates):
                                 coordval = dim_row[f'{pnt_class}.{coord_name}'] #  ['XLine1Point','XLine2Point','DimLinePoint'].[X,Y]
                                 labels[label_row_counter, 1 + 1 + coord_id] = coordval
@@ -299,8 +297,8 @@ def val_epoch(model, loader, device, criterion, epoch=0, plot_prediction=False, 
                 for j, point in enumerate(points):
                     # number of filled in true points is generally 
                     # less than max_poits, so some points are filled
-                    # with zeroes
-                    empty_true_point = torch.sum(point) == 0
+                    # with zeroes :2 first two columns - class, point_id
+                    empty_true_point = torch.sum(point[:2]) == 0
                     prediction_correct = 0
                     
                     if not empty_true_point:
