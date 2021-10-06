@@ -5,7 +5,7 @@
 import pymongo
 import pandas as pd
 import numpy as np
-import math
+from tqdm import tqdm
 import os
 from pathlib import Path
 from pymongo import MongoClient
@@ -28,7 +28,8 @@ def build_data(rebuild=False, img_size=512, limit_records=None):
         group_ids = list(objects.find().distinct('GroupId'))
         df = pd.DataFrame()
 
-        for i, group_id in enumerate(group_ids):
+        progress_bar = tqdm(enumerate(group_ids), total=limit_records)
+        for i, group_id in progress_bar:
             if limit_records and i > limit_records:
                 break
             data = query_collection_to_dataframe(db, group_id, img_size)
@@ -36,14 +37,15 @@ def build_data(rebuild=False, img_size=512, limit_records=None):
             if data is not None:
                 df = pd.concat([df, data])
                 result_ids.append(group_id)
+            progress_bar.set_description(f'Querying database {group_id}: {len(data) if data is not None else 0} annotations')
 
         df['ClassName'] = df['ClassName'].astype('category')
         df['GroupId'] = df['GroupId'].astype('category')
 
         df.to_pickle(pickle_file)
         with open(group_ids_file, 'w') as f:
-            for id in result_ids:
-                f.write(id+'\n')
+            for img_id in result_ids:
+                f.write(img_id+'\n')
 
     else:
         df = pd.read_pickle(pickle_file)
@@ -143,7 +145,7 @@ def query_collection_to_dataframe(db=None, group_id=None, img_size=512, max_enti
         # we normalize dataframe
         df = normalize(df=df, to_size=img_size, base_pnt_x=bound_min_x, base_pnt_y=bound_min_y, diff_x=bound_max_x - bound_min_x, diff_y=bound_max_y - bound_min_y)
 
-        print('group_id: {} df len: {}'.format(group_id, len(df)))
+        #print('group_id: {} df len: {}'.format(group_id, len(df)))
 
         return df[dataframe_cols]
 

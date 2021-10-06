@@ -99,7 +99,6 @@ class EntityDataset(Dataset):
 
         if recreate_cache:
             df, ids = build_data(rebuild=rebuild, img_size=img_size, limit_records=limit_records)
-            
 
             progress_bar = tqdm(enumerate(ids))
             for group_no, group_id in progress_bar:
@@ -478,9 +477,9 @@ def plot_val_dataset():
 if __name__ == "__main__":
     run(
         batch_size=32,
-        img_size=128,
-        limit_records=300,
-        rebuild=False,
+        img_size=512,
+        limit_records=3000,
+        rebuild=True,
         use_cache=False,
         epochs=10,
         checkpoint_interval=None)
