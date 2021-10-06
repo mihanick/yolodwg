@@ -363,3 +363,4 @@ dataset*.pickle
 data/images.zip
 
 runs
+data/*.json
