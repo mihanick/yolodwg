@@ -37,7 +37,7 @@ def open_square(src_img_path):
     trg.paste(src, (0, max_size - src.size[1]))
     return trg, max_size
 
-
+# TODO: non-zero classes and dimnumbers
 class EntityDataset(Dataset):
     def __init__(self, img_size=512, rebuild=False, limit_records=None):
         df, ids = build_data(rebuild=rebuild, img_size=img_size, limit_records=limit_records)
@@ -231,12 +231,15 @@ def val_epoch(model, loader, device, criterion, epoch=0, plot_prediction=False, 
     running_loss = 0.0
     counter = 0
     with torch.no_grad():
-        for batch_i, (imgs, targets) in tqdm(enumerate(loader)):
+        valid = []
+
+        for batch_i, (imgs, ground_truth) in tqdm(enumerate(loader)):
+            batch_size = ground_truth.shape[0]
             counter += 1
 
             imgs = imgs.to(device)
+            targets = ground_truth[:, :, -3:-1]
             targets = targets.to(device)
-            targets = targets[:, :, -3:-1]
             targets = targets.reshape(targets.size(0), -1)
 
             out = model(imgs)
@@ -250,8 +253,47 @@ def val_epoch(model, loader, device, criterion, epoch=0, plot_prediction=False, 
                             predictions=out,
                             plot_save_file=f'{plot_folder}/prediction_{epoch}.png')
 
-    # TODO: precision
-    return running_loss / counter, 0, 0, 0
+            predictions = out.reshape(batch_size, -1, model.num_coordinates)
+            
+            for i, points in enumerate(ground_truth):
+                # https://stasiuk.medium.com/pose-estimation-metrics-844c07ba0a78
+                # point is predicted correctly if it is within 0.05 of bound
+
+                prediction = predictions[i]
+                for j, point in enumerate(points):
+                    # number of filled in true points is generally 
+                    # less than max_poits, so some points are filled
+                    # with zeroes
+                    empty_true_point = torch.sum(point) == 0
+                    prediction_correct = 0
+                    
+                    if not empty_true_point:
+                        n_dim = point[1] # dimension identifier for this point
+                        pnt_x, pnt_y = point[2], point[3]
+                        points_of_same_dim = points[points[:, 1]==n_dim]
+                        points_of_same_dim = points_of_same_dim[points_of_same_dim[:, 2]!=0]
+
+                        # bound box (min and max coordinates of all points of this dimension):
+                        min_x, min_y, max_x, max_y = torch.min(points_of_same_dim[:, 2]), torch.min(points_of_same_dim[:, 3]), torch.max(points_of_same_dim[:, 2]), torch.max(points_of_same_dim[:, 3])
+                        boundbox_diagonal = torch.sqrt((max_x - min_x) ** 2 + (max_y - min_y) ** 2)
+                        tolerance = 0.05 * boundbox_diagonal
+
+                        # find all distances from current point to predictions
+                        distances_from_current_point = torch.sqrt((prediction[:, 0] - pnt_x) ** 2 + (prediction[:, 1] - pnt_y) **2)
+
+                        # calculate min distance to compare with tolerance
+                        min_distance_from_current_point = torch.min(distances_from_current_point)
+
+                        if min_distance_from_current_point <= tolerance:
+                            prediction_correct = 1
+                        valid.append(prediction_correct)
+
+        # tp, fp, fn = 1, 1, 1
+        # TODO: class metrics
+        precision = np.mean(valid) # tp / (tp + fp)
+        recall = 0 # tp / (tp + fn)
+        f1 = 0 #2 * precision * recall /(precision + recall)
+    return running_loss / counter, precision, recall, f1
 
 def run(
         batch_size=4,
@@ -340,8 +382,8 @@ def run(
         tb.add_scalar("loss/train", train_loss, epoch)
         tb.add_scalar("loss/val", val_loss, epoch)
         tb.add_scalar("accuracy/precision", precision, epoch)
-        tb.add_scalar("accuracy/recall", recall, epoch)
-        tb.add_scalar("accuracy/f1", f1, epoch)
+        #tb.add_scalar("accuracy/recall", recall, epoch)
+        #tb.add_scalar("accuracy/f1", f1, epoch)
         
     tb.close()
 
