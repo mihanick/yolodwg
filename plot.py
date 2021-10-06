@@ -49,9 +49,8 @@ def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_sa
 
     fig = plt.figure(figsize=(20, 20))
 
-    progress_bar = tqdm(enumerate(input_images), total = len(input_images))
-    for i, img in progress_bar:
-        progress_bar.set_description(f'Plotting images grid: {i}')
+    #print(f'Plotting images grid:')
+    for i, img in enumerate(input_images):
         if i + 1 >= grid_size * grid_size:
             break
         np_img = img.detach().cpu().numpy()

@@ -1,17 +1,23 @@
-# from drawSvg.elements import DrawingBasicElement
-
+'''
+Queries dwg data from mongo database and stores it in pandas pickle
+'''
 # https://stackoverflow.com/questions/16249736/how-to-import-data-from-mongodb-to-pandas
 
-import pymongo
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
 import os
 from pathlib import Path
 from pymongo import MongoClient
-from PIL import Image
 
 def build_data(rebuild=False, img_size=512, limit_records=None):
+    '''
+    returns pandas dataframe with dwg data and list of image ids
+
+    rebuild - query mongo
+    img_size - adjust input images to this size
+    limit_records - query this number of records from db
+    '''
     pickle_file = f'dataset{img_size}.pickle'
     group_ids_file = f'ids{img_size}.txt'
     result_ids = []
@@ -105,7 +111,7 @@ def query_collection_to_dataframe(db=None, group_id=None, img_size=512, max_enti
     #if len(drawing_annotations) == 0:
     #    return
     # limit to 20 labels per image
-    if len(drawing_annotations) > 20:
+    if len(drawing_annotations) > 10:
         return
 
     # now we create dataframe
@@ -209,7 +215,7 @@ def expand_columns(df, column_names):
         
         # get rid of nans in column, so the type can be determined and parsed
         # https://pandas.pydata.org/pandas-docs/stable/reference/api/pandas.DataFrame.dropna.html 
-        res1 = df.dropna(subset = [col_name])
+        res1 = df.dropna(subset=[col_name])
         values = res1[col_name].values.tolist()
         indexes = res1[col_name].index
         # print(values, indexes)

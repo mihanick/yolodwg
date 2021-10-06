@@ -139,7 +139,7 @@ class EntityDataset(Dataset):
             if use_cache:
                 torch.save({'img_size':self.img_size, 'max_labels': self.max_labels, 'data':self.data}, self.cached_data_file)
 
-        print(f'Entity dataset. Images: {len(self.data)} Max points:{self.max_labels}')
+        print(f'\nEntity dataset. Images: {len(self.data)} Max points:{self.max_labels}.')
 
     def __len__(self):
         return len(self.data)
@@ -167,7 +167,7 @@ class DwgDataset:
         val_indices   = indices[:val_split]
         train_indices = indices[val_split:]
 
-        train_sampler = SubsetRandomSampler(train_indices)
+        train_sampler = SubsetRandomSampler(train_indices) 
         val_sampler   = SubsetRandomSampler(val_indices)
 
         # https://stackoverflow.com/questions/64586575/adding-class-objects-to-pytorch-dataloader-batch-must-contain-tensors
@@ -183,8 +183,8 @@ class DwgDataset:
                 lbls[i, :num_labels] = torch.from_numpy(lbl)
             return imgs, lbls
 
-        self.train_loader = torch.utils.data.DataLoader(self.entities, batch_size=batch_size, sampler=train_sampler, collate_fn=custom_collate, drop_last=False)
-        self.val_loader   = torch.utils.data.DataLoader(self.entities, batch_size=batch_size, sampler=val_sampler, collate_fn=custom_collate, drop_last=False)
+        self.train_loader = torch.utils.data.DataLoader(self.entities, batch_size=batch_size, sampler=train_sampler, collate_fn=custom_collate, shuffle=False, drop_last=False)
+        self.val_loader   = torch.utils.data.DataLoader(self.entities, batch_size=batch_size, sampler=val_sampler, collate_fn=custom_collate, shuffle=False, drop_last=False)
         
 #------------------------------
 
@@ -201,11 +201,11 @@ class DwgKeyPointsModel(nn.Module):
         self.max_coords = self.max_points * self.num_coordinates
         self.num_channels = num_channels
 
-        self.conv1 = nn.Conv2d(self.num_channels, 32, kernel_size=5)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3)
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=3)
+        self.conv1 = nn.Conv2d(self.num_channels, 64, kernel_size=5)
+        self.conv2 = nn.Conv2d(64, 128, kernel_size=3)
+        self.conv3 = nn.Conv2d(128, 256, kernel_size=3)
 
-        self.fc1 = nn.Linear(128, self.max_coords) # x, y for each point
+        self.fc1 = nn.Linear(256, self.max_coords) # x, y for each point
         self.pool = nn.MaxPool2d(2, 2)
 
         self.dropout = nn.Dropout2d(p=0.2)
@@ -251,13 +251,13 @@ def save_checkpoint(model, optimizer, loss, checkpoint_path, precision=0, recall
         'f1':f1
     }, checkpoint_path)
 
-def train_epoch(model, loader, device, criterion, optimizer, scheduler):
+def train_epoch(model, loader, device, criterion, optimizer, scheduler, epoch=0, folder='runs'):
     model.train()
 
     running_loss = 0.0
     counter = 0
 
-    progress_bar = tqdm(enumerate(loader), total=len(loader))
+    progress_bar = tqdm(enumerate(loader))
     for _, (imgs, targets) in progress_bar:
         counter += 1
         progress_bar.set_description(f'Training. Running loss: {running_loss / counter:.4f}')
@@ -272,16 +272,17 @@ def train_epoch(model, loader, device, criterion, optimizer, scheduler):
         optimizer.zero_grad()
 
         out = model(imgs)
+
         loss = criterion(out, targets)
         running_loss += loss.item()
 
         #debug plot
-        #if counter == 1:
-        #    plot_batch_grid(
-        #                input_images=imgs,
-        #                true_keypoints=targets,
-        #                predictions=out,
-        #                plot_save_file=f'runs/train.png')
+        if counter == 1:
+            plot_batch_grid(
+                        input_images=imgs,
+                        true_keypoints=targets,
+                        predictions=out,
+                        plot_save_file=f'{folder}/train_{epoch}_{counter}.png')
 
         loss.backward()
         optimizer.step()
@@ -297,12 +298,10 @@ def val_epoch(model, loader, device, criterion, epoch=0, plot_prediction=False, 
     with torch.no_grad():
         valid = []
 
-        progress_bar = tqdm(enumerate(loader), total=len(loader))
+        progress_bar = tqdm(enumerate(loader))
         for batch_i, (imgs, ground_truth) in progress_bar:
             batch_size = ground_truth.shape[0]
             counter += 1
-
-            progress_bar.set_description(f"Validating epoch {epoch}. Runnning loss: {running_loss / counter:.4f}")
 
             imgs = imgs.to(device)
             targets = ground_truth[:, :, -3:-1]
@@ -355,6 +354,7 @@ def val_epoch(model, loader, device, criterion, epoch=0, plot_prediction=False, 
                             prediction_correct = 1
                         valid.append(prediction_correct)
 
+                progress_bar.set_description(f"Validating epoch {epoch}. Runnning loss: {running_loss / counter:.4f}")
         # tp, fp, fn = 1, 1, 1
         # TODO: class metrics
         precision = np.mean(valid) # tp / (tp + fp)
@@ -421,7 +421,9 @@ def run(
                                 device=config.device,
                                 criterion=criterion,
                                 optimizer=optimizer,
-                                scheduler=scheduler)
+                                scheduler=scheduler,
+                                epoch=epoch,
+                                folder=tb_log_path)
 
         val_loss, precision, recall, f1 = val_epoch(
                                 model=model,
@@ -444,14 +446,14 @@ def run(
             save_checkpoint(model, optimizer, criterion, checkpoint_path=f'{tb_log_path}/best.weights', precision=precision, recall=recall, f1=f1)
             # print(f"Best recall: {best_recall:.4f} Best precision: {best_precision:.4f}")
 
-        print(f'[{epoch}/{epochs}]@{(time.time() - start):.0f}s train loss: {train_loss:.4f} val_loss:{val_loss:.4f} precision: {precision:.4f} recall: {recall:.4f} f1: {f1:.4f}')
+        print(f'[{epoch} / {epochs}]@{(time.time() - start):.0f} sec. train loss: {train_loss:.4f} val_loss:{val_loss:.4f} precision: {precision:.4f} recall: {recall:.4f} f1: {f1:.4f}')
 
         tb.add_scalar("loss/train", train_loss, epoch)
         tb.add_scalar("loss/val", val_loss, epoch)
         tb.add_scalar("accuracy/precision", precision, epoch)
         #tb.add_scalar("accuracy/recall", recall, epoch)
         #tb.add_scalar("accuracy/f1", f1, epoch)
-    print(f'[DONE] Training achieved best recall: {best_recall} best precision: {best_precision}. This run data is at "{tb_log_path}"')
+    print(f'[DONE] @{time.time() - start:.0f} sec. Training achieved best recall: {best_recall:.4f} best precision: {best_precision:.4f}. This run data is at "{tb_log_path}"')
     tb.close()
 
 def plot_val_dataset():
