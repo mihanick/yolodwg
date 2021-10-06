@@ -68,8 +68,8 @@ class EntityDataset(Dataset):
                 dim_count = len(dims)
 
                 # [class_id, dim_id, pnt_id, x, y, good?]
-                labels = np.zeros([dim_count * len(self.pnt_classes), 1 + 1 + self.num_coordinates + 1], dtype=np.float)
-                # labels = np.zeros([dim_count, self.num_classes, self.num_pnt_classes, self.num_coordinates], dtype=np.float)
+                labels = np.zeros([dim_count * len(self.pnt_classes), 1 + 1 + self.num_coordinates + 1], dtype=float)
+                # labels = np.zeros([dim_count, self.num_classes, self.num_pnt_classes, self.num_coordinates], dtype=float)
 
                 label_row_counter = 0
                 for dim_no, dim_row in dims.iterrows():
@@ -276,7 +276,7 @@ def val_epoch(model, loader, device, criterion, epoch=0, plot_prediction=False, 
                         # bound box (min and max coordinates of all points of this dimension):
                         min_x, min_y, max_x, max_y = torch.min(points_of_same_dim[:, 2]), torch.min(points_of_same_dim[:, 3]), torch.max(points_of_same_dim[:, 2]), torch.max(points_of_same_dim[:, 3])
                         boundbox_diagonal = torch.sqrt((max_x - min_x) ** 2 + (max_y - min_y) ** 2)
-                        tolerance = 0.05 * boundbox_diagonal
+                        tolerance = 0.1 * boundbox_diagonal
 
                         # find all distances from current point to predictions
                         distances_from_current_point = torch.sqrt((prediction[:, 0] - pnt_x) ** 2 + (prediction[:, 1] - pnt_y) **2)
@@ -410,9 +410,9 @@ def plot_val_dataset():
 
 if __name__ == "__main__":
     run(
-        batch_size=4,
-        img_size=128,
-        limit_records=50,
+        batch_size=32,
+        img_size=64,
+        limit_records=300,
         rebuild=False,
-        epochs=10,
+        epochs=30,
         checkpoint_interval=5)

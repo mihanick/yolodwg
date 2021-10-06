@@ -12,8 +12,8 @@ from pymongo import MongoClient
 from PIL import Image
 
 def build_data(rebuild=False, img_size=512, limit_records=None):
-    pickle_file = 'dataset.pickle'
-    group_ids_file = 'ids.txt'
+    pickle_file = f'dataset{img_size}.pickle'
+    group_ids_file = f'ids{img_size}.txt'
     result_ids = []
 
     # We will have to recreate pickle from db if it is not exist
