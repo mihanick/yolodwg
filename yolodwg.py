@@ -25,6 +25,11 @@ from torch.utils.data import Dataset, SubsetRandomSampler
 def open_square(src_img_path):
     '''
     https://jdhao.github.io/2017/11/06/resize-image-to-square-with-padding/
+    Opens specified path. Gets image max_size
+    Pastes opened at bottom-left of square max_size*max_size
+    
+    returns Image and its max_size
+
     '''
     src = Image.open(src_img_path)
     max_size = max(src.size)
@@ -37,10 +42,18 @@ def open_square(src_img_path):
     trg.paste(src, (0, max_size - src.size[1]))
     return trg, max_size
 
-# TODO: non-zero classes and dimnumbers
 class EntityDataset(Dataset):
-    def __init__(self, img_size=512, rebuild=False, limit_records=None):
-        df, ids = build_data(rebuild=rebuild, img_size=img_size, limit_records=limit_records)
+    '''
+    Dataset of images - labels (points of dimensions) 
+    '''
+    def __init__(self, img_size=512, rebuild=False, limit_records=None, use_cache=False):
+        '''
+        Dataset of images and
+        img_size - return images in specified square size
+        rebuild - queries entities from mongodb and stores to pandas dataframe dataset{img_size}.pickle
+        limit_records - limit max number of records queried from database
+        use_cache - torch.save data to speed up loading small datasets
+        '''
 
         self.max_labels = 0
         self.img_size = img_size
@@ -56,39 +69,59 @@ class EntityDataset(Dataset):
 
         self.data = []
 
-        for group_no, group_id in tqdm(enumerate(ids)):
-            source_image_annotated = f'./data/images/annotated_{group_id}.png'
-            source_image_stripped = f'./data/images/stripped_{group_id}.png'
-            img, max_size = open_square(source_image_stripped)
-            img = img.resize((img_size, img_size))
-            # self.num_image_channels = max(self.num_image_channels, img.getchannel())
+        recreate_cache = True
+        self.cached_data_file = f'dataset{img_size}.cache'
+        if use_cache:
+            try: # file could not exist, or torch might not load it
+                cached_data = torch.load(self.cached_data_file)
+                # check cached validity:
+                if cached_data['img_size'] == img_size:
+                    self.max_labels = cached_data['max_labels']
+                    self.data = cached_data['data']
+                    recreate_cache = False
+            except:
+                recreate_cache = True
 
-            for class_id, class_name in enumerate(self.classes):
-                dims = df[(df['GroupId'] == group_id) & (df['ClassName'] == class_name)]
-                dim_count = len(dims)
+        if recreate_cache:
+            df, ids = build_data(rebuild=rebuild, img_size=img_size, limit_records=limit_records)
+            
+            for group_no, group_id in tqdm(enumerate(ids)):
+                source_image_annotated = f'./data/images/annotated_{group_id}.png'
+                source_image_stripped = f'./data/images/stripped_{group_id}.png'
+                img, max_size = open_square(source_image_stripped)
+                img = img.resize((img_size, img_size))
+                # self.num_image_channels = max(self.num_image_channels, img.getchannel())
 
-                # [class_id, dim_id, pnt_id, x, y, good?]
-                labels = np.zeros([dim_count * len(self.pnt_classes), 1 + 1 + self.num_coordinates + 1], dtype=np.float)
-                # labels = np.zeros([dim_count, self.num_classes, self.num_pnt_classes, self.num_coordinates], dtype=np.float)
+                for class_id, class_name in enumerate(self.classes):
+                    dims = df[(df['GroupId'] == group_id) & (df['ClassName'] == class_name)]
+                    dim_count = len(dims)
 
-                label_row_counter = 0
-                for dim_no, dim_row in dims.iterrows():
-                    for pnt_id, pnt_class in enumerate(self.pnt_classes):
-                        labels[label_row_counter, 0] = class_id # AlignedDimension
-                        labels[label_row_counter, 1] = pnt_id
-                        for coord_id, coord_name in enumerate(self.coordinates):
-                            coordval = dim_row[f'{pnt_class}.{coord_name}'] #  ['XLine1Point','XLine2Point','DimLinePoint'].[X,Y]
-                            labels[label_row_counter, 1 + 1 + coord_id] = coordval
-                        labels[label_row_counter, 1 + 1 + self.num_coordinates] = 0 # good
-                        label_row_counter += 1
+                    # [class_id, dim_id, pnt_id, x, y, good?]
+                    labels = np.zeros([dim_count * len(self.pnt_classes), 1 + 1 + self.num_coordinates + 1], dtype=float)
+                    # labels = np.zeros([dim_count, self.num_classes, self.num_pnt_classes, self.num_coordinates], dtype=float)
 
-                # remember maximum number of points
-                if label_row_counter > self.max_labels:
-                    self.max_labels = label_row_counter
+                    label_row_counter = 0
+                    for dim_no, dim_row in dims.iterrows():
+                        for pnt_id, pnt_class in enumerate(self.pnt_classes):
+                            labels[label_row_counter, 0] = class_id + 1 # AlignedDimension (nonzero)
+                            labels[label_row_counter, 1] = pnt_id + 1 # point_id (nonzero)
+                            for coord_id, coord_name in enumerate(self.coordinates):
+                                coordval = dim_row[f'{pnt_class}.{coord_name}'] #  ['XLine1Point','XLine2Point','DimLinePoint'].[X,Y]
+                                labels[label_row_counter, 1 + 1 + coord_id] = coordval
+                            labels[label_row_counter, 1 + 1 + self.num_coordinates] = 0 # good
+                            label_row_counter += 1
 
-            labels[:, 2:4] /= img_size # scale coordinates to [0..1]
-            labels[:, 3] = 1- labels[:, 3] # invert y coord as on the drawing it will be from top left, not from bottom left
-            self.data.append((np.array(img), labels))
+                    # remember maximum number of points
+                    if label_row_counter > self.max_labels:
+                        self.max_labels = label_row_counter
+
+                labels[:, 2:4] /= img_size # scale coordinates to [0..1]
+                labels[:, 3] = 1 - labels[:, 3] # invert y coord as on the drawing it will be from top left, not from bottom left
+                self.data.append((np.array(img), labels))
+
+            # save creaed data as cache
+            if use_cache:
+                torch.save({'img_size':self.img_size, 'max_labels': self.max_labels, 'data':self.data}, self.cached_data_file)
 
         print(f'Entity dataset. Images: {len(self.data)} Max points:{self.max_labels}')
 
@@ -100,10 +133,10 @@ class EntityDataset(Dataset):
         return img, lbl
 
 class DwgDataset:
-    def __init__(self, batch_size=4, img_size=512, limit_records=None, rebuild=False):
+    def __init__(self, batch_size=4, img_size=512, limit_records=None, rebuild=False, use_cache=False):
         self.batch_size = batch_size
 
-        self.entities = EntityDataset(img_size=img_size, rebuild=rebuild, limit_records=limit_records)
+        self.entities = EntityDataset(img_size=img_size, rebuild=rebuild, limit_records=limit_records, use_cache=use_cache)
         self.img_size = img_size
 
         data_len = len(self.entities)
@@ -111,7 +144,7 @@ class DwgDataset:
         validation_fraction = 0.1
         np.random.seed(42)
 
-        val_split  = int(np.floor(validation_fraction * data_len))
+        val_split = int(np.floor(validation_fraction * data_len))
         indices = list(range(data_len))
         np.random.shuffle(indices)
 
@@ -123,13 +156,14 @@ class DwgDataset:
 
         # https://stackoverflow.com/questions/64586575/adding-class-objects-to-pytorch-dataloader-batch-must-contain-tensors
         def custom_collate(sample):
-            imgs = torch.zeros((self.batch_size, self.img_size, self.img_size, self.entities.num_image_channels))
+            imgs = torch.zeros((self.batch_size, self.img_size, self.img_size, self.entities.num_image_channels), dtype=torch.float32)
             # batch, label_id, class_id, dim_id, x, y, good
-            lbls = torch.zeros((self.batch_size, self.entities.max_labels, 1 + 1 + self.entities.num_coordinates + 1))
+            lbls = torch.zeros((self.batch_size, self.entities.max_labels, 1 + 1 + self.entities.num_coordinates + 1), dtype=torch.float32)
 
             for i in range(len(sample)):
                 img, lbl = sample[i]
                 imgs[i] = torch.from_numpy(img)
+                imgs /= 255
                 num_labels = lbl.shape[0]
                 lbls[i, :num_labels] = torch.from_numpy(lbl)
             return imgs, lbls
@@ -174,10 +208,15 @@ class DwgKeyPointsModel(nn.Module):
         bs, _, _, _ = x.shape
         x = F.adaptive_avg_pool2d(x, 1).reshape(bs, -1)
         x = self.dropout(x)
-        out = self.fc1(x)
+        x = self.fc1(x)
 
-        # TODO: force output to be in range [0..1]
-        return out
+        # force output to be in range [0..1]
+        xmin = torch.min(x).item()
+        xmax = torch.max(x).item()
+        x -= xmin
+        x /= (xmax - xmin + 1e-12) # avoid zero
+
+        return x
 #------------------------------
 
 def save_checkpoint(model, optimizer, loss, checkpoint_path, precision=0, recall=0, f1=0):
@@ -263,8 +302,8 @@ def val_epoch(model, loader, device, criterion, epoch=0, plot_prediction=False, 
                 for j, point in enumerate(points):
                     # number of filled in true points is generally 
                     # less than max_poits, so some points are filled
-                    # with zeroes
-                    empty_true_point = torch.sum(point) == 0
+                    # with zeroes :2 first two columns - class, point_id
+                    empty_true_point = torch.sum(point[:2]) == 0
                     prediction_correct = 0
                     
                     if not empty_true_point:
@@ -301,6 +340,7 @@ def run(
         img_size=512,
         rebuild=False,
         limit_records=None,
+        use_cache=True,
         checkpoint_interval=10,
         lr=0.001
     ):
@@ -321,15 +361,13 @@ def run(
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     tb = SummaryWriter(tb_log_path)
 
-    # enable gpu if possible
-    device = torch.device("cuda" if torch.cuda.is_available() else "cpu")
-
     # create dataset
     dwg_dataset = DwgDataset(
-                    batch_size=batch_size, 
+                    batch_size=batch_size,
                     img_size=img_size, 
                     limit_records=limit_records,
                     rebuild=rebuild,
+                    use_cache=use_cache,
                     )
 
     train_loader = dwg_dataset.train_loader
@@ -337,7 +375,7 @@ def run(
 
     # create model
     model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates)
-    model.to(device)
+    model.to(config.device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
@@ -352,7 +390,7 @@ def run(
         train_loss = train_epoch(
                                 model=model,
                                 loader=train_loader,
-                                device=device,
+                                device=config.device,
                                 criterion=criterion,
                                 optimizer=optimizer,
                                 scheduler=scheduler)
@@ -360,7 +398,7 @@ def run(
         val_loss, precision, recall, f1 = val_epoch(
                                 model=model,
                                 loader=val_loader,
-                                device=device,
+                                device=config.device,
                                 criterion=criterion)
 
         last_epoch = (epoch == epochs - 1)
@@ -384,7 +422,7 @@ def run(
         tb.add_scalar("accuracy/precision", precision, epoch)
         #tb.add_scalar("accuracy/recall", recall, epoch)
         #tb.add_scalar("accuracy/f1", f1, epoch)
-        
+    print(f'Training achieved best recall: {best_recall} best precision: {best_precision}. This run data is at {tb_log_path}')
     tb.close()
 
 def plot_val_dataset():
@@ -402,7 +440,6 @@ def plot_val_dataset():
     
     return plot_loader_predictions(val_loader, model)
 # TODO: generate points by triades
-# TODO: cache images in dataset
 # TODO: calculate precision
 # TODO: parse arguments
 # TODO: play with architecture, fully convolutional resnet50
@@ -410,9 +447,10 @@ def plot_val_dataset():
 
 if __name__ == "__main__":
     run(
-        batch_size=4,
+        batch_size=32,
         img_size=128,
-        limit_records=50,
-        rebuild=False,
+        limit_records=300,
+        rebuild=True,
+        use_cache=True,
         epochs=10,
-        checkpoint_interval=5)
+        checkpoint_interval=None)

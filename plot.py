@@ -62,10 +62,10 @@ def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_sa
         
         plot_image_prediction_truth(img, pred, tkp)
 
+    plt.axis('off')
+
     if plot_save_file is not None:
         plt.savefig(plot_save_file)
-
-    plt.axis('off')
     return fig
 
 def plot_image_prediction_truth(input_image, predicted_keypoints=None, true_keypoints=None):
