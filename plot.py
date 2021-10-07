@@ -24,15 +24,15 @@ def plot_loader_predictions(loader, model, epoch=0, plot_folder=None):
             out = model(imgs)
             out = out.view((out.shape[0], model.max_points, -1))
 
-            fig = plot_batch_grid(
-                                input_images=imgs,
-                                true_keypoints=targets,
-                                predictions=out,
-                                plot_save_file=f'{plot_folder}/prediction_{epoch}_{i}.png')
+            plot_batch_grid(
+                        input_images=imgs,
+                        true_keypoints=targets,
+                        predictions=out,
+                        plot_save_file=f'{plot_folder}/prediction_{epoch}_{i}.png')
 
             if i > 3:
                 break
-    return fig
+    
 
 def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_save_file=None):
     '''
@@ -45,13 +45,13 @@ def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_sa
     '''
     batch_size = input_images.shape[0]
     grid_size = int(math.sqrt(batch_size))
-    grid_size = min(4, grid_size)
+    grid_size = min(3, grid_size)
 
-    fig = plt.figure(figsize=(20, 20))
+    fig = plt.figure(figsize=(10, 10))
 
     #print(f'Plotting images grid:')
     for i, img in enumerate(input_images):
-        if i + 1 >= grid_size * grid_size:
+        if i + 1 > grid_size * grid_size:
             break
         np_img = img.detach().cpu().numpy()
         if true_keypoints is not None:
@@ -68,7 +68,7 @@ def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_sa
 
     if plot_save_file is not None:
         plt.savefig(plot_save_file)
-    return fig
+    plt.close()
 
 def plot_image_prediction_truth(input_image, predicted_keypoints=None, true_keypoints=None):
     '''

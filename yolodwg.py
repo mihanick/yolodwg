@@ -60,7 +60,7 @@ def open_square(src_img_path, to_size=512):
 
 class EntityDataset(Dataset):
     '''
-    Dataset of images - labels (points of dimensions) 
+    Dataset of images - labels (points of dimensions)
     '''
     def __init__(self, img_size=512, rebuild=False, limit_records=None, use_cache=False):
         '''
@@ -202,11 +202,14 @@ class DwgKeyPointsModel(nn.Module):
         self.max_coords = self.max_points * self.num_coordinates
         self.num_channels = num_channels
 
-        self.conv1 = nn.Conv2d(self.num_channels, 32, kernel_size=5)
-        self.conv2 = nn.Conv2d(32, 64, kernel_size=3)
-        self.conv3 = nn.Conv2d(64, 128, kernel_size=3)
-        self.fc0 = nn.Linear(128, 256)
-        self.fc1 = nn.Linear(256, self.max_coords) # x, y for each point
+        s = 16 #vanilla
+        s = 128
+
+        self.conv1 = nn.Conv2d(self.num_channels, s*2, kernel_size=5)
+        self.conv2 = nn.Conv2d(s*2, s*4, kernel_size=3)
+        self.conv3 = nn.Conv2d(s*4, s*8, kernel_size=3)
+        self.fc0 = nn.Linear(s*8, s*16)
+        self.fc1 = nn.Linear(s*16, self.max_coords) # x, y for each point
         self.pool = nn.MaxPool2d(2, 2)
 
         self.dropout = nn.Dropout2d(p=0.2)
@@ -334,8 +337,9 @@ def val_epoch(model, loader, device, criterion, epoch=0, epochs=0, plot_predicti
             targets = targets.reshape(targets.size(0), -1)
 
             out = model(imgs)
-            loss = criterion(out, targets)
-            running_loss += loss.item()
+            # print(counter, torch.mean(imgs).item(), torch.mean(out).item())
+            #loss = criterion(out, targets)
+            #running_loss += loss.item()
 
             if plot_prediction and plot_folder is not None:
                 plot_batch_grid(
@@ -393,7 +397,7 @@ def run(
         limit_records=None,
         use_cache=True,
         checkpoint_interval=10,
-        lr=0.001
+        lr=0.01
     ):
 
     runs_dir = 'runs'
@@ -431,8 +435,6 @@ def run(
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
     criterion = nn.MSELoss()
-
-    
 
     best_recall = 0.0
     best_precision = 0.0
@@ -509,9 +511,9 @@ def plot_val_dataset():
 if __name__ == "__main__":
     run(
         batch_size=32,
-        img_size=512,
-        limit_records=3000,
-        rebuild=True,
-        use_cache=False,
-        epochs=10,
+        img_size=128,
+        limit_records=600,
+        rebuild=False,
+        use_cache=True,
+        epochs=100,
         checkpoint_interval=None)
