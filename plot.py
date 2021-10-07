@@ -38,7 +38,7 @@ def plot_loader_predictions(loader, model, epoch=0, plot_folder=None):
 
 def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_save_file=None):
     '''
-    input images torch.tensor(n_batches, img_size, img_size, channels)
+    input images torch.tensor(n_batches, channels, img_size, img_size)
     true_keypoints torch.tensor(n_batches, max_points * (classes + n_coords)
     predictions  torch.tensor(n_batches, max_points * (classes + n_coords)
     plot_save_dir - directory to save plots
@@ -56,6 +56,8 @@ def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_sa
         if i + 1 > grid_size * grid_size:
             break
         np_img = img.detach().cpu().numpy()
+        np_img = np.transpose(np_img, (1,2,0)) #channels,x,y -> x,y,channels
+
         tkp  = None
         pred = None
 
@@ -85,14 +87,11 @@ def plot_image_prediction_truth(input_image, predicted_keypoints=None, true_keyp
     true_keypoints torch.tensor ground truth for image np.array.size(max_points, 2[x,y])
     y coordinates are calculated from top left corner
     x,y are in [0..1] range
-    optionally saves graph in specified plot_save_path
 
-    returns pyplot graph
     '''
 
     img_size = input_image.shape[0]
-    #input_image *= 255
-    #input_image
+
     plt.imshow(input_image)
 
     if predicted_keypoints is not None:

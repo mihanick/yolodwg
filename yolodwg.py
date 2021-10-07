@@ -15,6 +15,9 @@ from torch.utils.tensorboard import SummaryWriter
 import torchvision.models as models
 from torch.optim.lr_scheduler import StepLR
 
+# pip insatll pretrainedmodels
+import pretrainedmodels
+
 from PIL import Image
 
 from processing import build_data
@@ -174,22 +177,61 @@ class DwgDataset:
 
         # https://stackoverflow.com/questions/64586575/adding-class-objects-to-pytorch-dataloader-batch-must-contain-tensors
         def custom_collate(sample):
-            imgs = torch.zeros((self.batch_size, self.img_size, self.img_size, self.entities.num_image_channels), dtype=torch.float32)
+            imgs = torch.zeros((self.batch_size, self.entities.num_image_channels, self.img_size, self.img_size), dtype=torch.float32)
             # batch, label_id, class_id, dim_id, x, y, good
             lbls = torch.zeros((self.batch_size, self.entities.max_labels, 1 + 1 + self.entities.num_coordinates + 1), dtype=torch.float32)
 
             for i in range(len(sample)):
                 img, lbl = sample[i]
-                imgs[i] = torch.from_numpy(img) / 255
+
+                ima = np.transpose(img, (2, 0, 1)) # x, y, channels -> channels, x, y
+                ima = torch.from_numpy(ima) / 255
+
+                imgs[i] = ima
                 num_labels = lbl.shape[0]
                 lbls[i, :num_labels] = torch.from_numpy(lbl)
+
             return imgs, lbls
 
         self.train_loader = torch.utils.data.DataLoader(self.entities, batch_size=batch_size, sampler=train_sampler, collate_fn=custom_collate, shuffle=False, drop_last=False)
         self.val_loader   = torch.utils.data.DataLoader(self.entities, batch_size=batch_size, sampler=val_sampler, collate_fn=custom_collate, shuffle=False, drop_last=False)
         
 #------------------------------
+class DwgKeyPointsResNet50(nn.Module):
+    '''
+    https://debuggercafe.com/advanced-facial-keypoint-detection-with-pytorch/
+    '''
+    def __init__(self, pretrained, requires_grad, max_points=100, num_coordinates=2, num_channels=3):
+        super(DwgKeyPointsResNet50, self).__init__()
+        self.max_points = max_points
+        self.num_coordinates = num_coordinates
+        self.max_coords = self.max_points * self.num_coordinates
 
+        if pretrained == True:
+            self.model = pretrainedmodels.__dict__['resnet50'](pretrained='imagenet')
+        else:
+            self.model = pretrainedmodels.__dict__['resnet50'](pretrained=None)
+
+        if requires_grad == True:
+            for param in self.model.parameters():
+                param.requires_grad = True
+            print('Training intermediate layer parameters...')
+        elif requires_grad == False:
+            for param in self.model.parameters():
+                param.requires_grad = False
+            print('Freezing intermediate layer parameters...')
+
+        # change the final layer
+        self.l0 = nn.Linear(2048, self.max_coords)
+
+    def forward(self, x):
+        # get the batch size only, ignore (c, h, w)
+        batch, _, _, _ = x.shape
+
+        x = self.model.features(x)
+        x = F.adaptive_avg_pool2d(x, 1).reshape(batch, -1)
+        l0 = self.l0(x)
+        return l0
 #------------------------------
 class DwgKeyPointsModel(nn.Module):
     def __init__(self, max_points=100, num_coordinates=2, num_channels=3):
@@ -215,9 +257,6 @@ class DwgKeyPointsModel(nn.Module):
         self.dropout = nn.Dropout2d(p=0.2)
     
     def forward(self, x):
-        x = torch.transpose(x, 1, 3) # batch, x, y, channels -> batch, channels, y, x
-        x = torch.transpose(x, 2, 3) # batch, channels, y, x -> batch, channels, x, y
-
         x = F.relu(self.conv1(x))
         x = self.pool(x)
         x = F.relu(self.conv2(x))
@@ -431,7 +470,8 @@ def run(
     val_loader   = dwg_dataset.val_loader
 
     # create model
-    model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
+    # model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
+    model = DwgKeyPointsResNet50(pretrained=True,requires_grad=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
     model.to(config.device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
