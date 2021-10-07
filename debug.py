@@ -4,13 +4,14 @@ from yolodwg import DwgKeyPointsModel, DwgKeyPointsResNet50
 from plot import plot_batch_grid
 
 #model = DwgKeyPointsModel(max_points=100)
-#checkpoint = torch.load('runs/best.weights', map_location=config.device)
-#max_points = checkpoint['max_points']
-#num_coordinates = checkpoint['num_coordinates']
 #model = DwgKeyPointsModel(max_points=max_points, num_coordinates=num_coordinates).to(config.device)
-#model.load_state_dict(checkpoint['model_state_dict'])
 
-model = DwgKeyPointsResNet50(requires_grad=False, max_points=100)
+checkpoint = torch.load('runs/best.weights', map_location=config.device)
+max_points = checkpoint['max_points']
+num_coordinates = checkpoint['num_coordinates']
+
+model = DwgKeyPointsResNet50(requires_grad=True, max_points=max_points)
+model.load_state_dict(checkpoint['model_state_dict'])
 model.to(config.device)
 model.eval()
 

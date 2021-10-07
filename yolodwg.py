@@ -198,24 +198,22 @@ class DwgKeyPointsResNet50(nn.Module):
     '''
     https://debuggercafe.com/advanced-facial-keypoint-detection-with-pytorch/
     '''
-    def __init__(self, requires_grad, max_points=100, num_coordinates=2, num_channels=3):
+    def __init__(self, requires_grad=True, pretrained=True, max_points=100, num_coordinates=2, num_channels=3):
         super(DwgKeyPointsResNet50, self).__init__()
         self.max_points = max_points
         self.num_coordinates = num_coordinates
         self.max_coords = self.max_points * self.num_coordinates
 
-        self.model = models.resnet50(pretrained=True)
+        self.model = models.resnet50(pretrained=pretrained)
 
         if requires_grad == True:
             for param in self.model.parameters():
                 param.requires_grad = True
-            print('Training intermediate layer parameters...')
         elif requires_grad == False:
             for param in self.model.parameters():
                 param.requires_grad = False
-            print('Freezing intermediate layer parameters...')
 
-        # change the final layer
+        # add the final layer
         self.l0 = nn.Linear(1000, self.max_coords)
 
     def forward(self, x):
@@ -225,6 +223,7 @@ class DwgKeyPointsResNet50(nn.Module):
         x = self.model(x)
         l0 = self.l0(x)
         return l0
+
 #------------------------------
 class DwgKeyPointsModel(nn.Module):
     def __init__(self, max_points=100, num_coordinates=2, num_channels=3):
@@ -464,12 +463,13 @@ def run(
 
     # create model
     # model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
-    model = DwgKeyPointsResNet50(requires_grad=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
+    model = DwgKeyPointsResNet50(requires_grad=False, pretrained=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
     model.to(config.device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
-    criterion = nn.MSELoss()
+    #criterion = nn.MSELoss()
+    criterion = nn.SmoothL1Loss()
 
     best_recall = 0.0
     best_precision = 0.0
@@ -550,8 +550,8 @@ if __name__ == "__main__":
     run(
         batch_size=32,
         img_size=128,
-        limit_records=600,
-        rebuild=False,
+        limit_records=12000,
+        rebuild=True,
         use_cache=True,
-        epochs=10,
+        epochs=100,
         checkpoint_interval=None)
