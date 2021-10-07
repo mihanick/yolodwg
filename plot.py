@@ -54,6 +54,9 @@ def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_sa
         if i + 1 > grid_size * grid_size:
             break
         np_img = img.detach().cpu().numpy()
+        tkp  = None
+        pred = None
+
         if true_keypoints is not None:
             tkp = true_keypoints[i].detach().cpu().numpy()
             tkp = np.reshape(tkp, (-1, 2))

@@ -203,14 +203,13 @@ class DwgKeyPointsModel(nn.Module):
         self.num_channels = num_channels
 
         s = 16 #vanilla
-        s = 128
 
         self.conv1 = nn.Conv2d(self.num_channels, s*2, kernel_size=5)
         self.conv2 = nn.Conv2d(s*2, s*4, kernel_size=3)
         self.conv3 = nn.Conv2d(s*4, s*8, kernel_size=3)
-        self.fc0 = nn.Linear(s*8, s*16)
-        self.fc1 = nn.Linear(s*16, self.max_coords) # x, y for each point
-        self.pool = nn.MaxPool2d(2, 2)
+
+        self.fc1 = nn.Linear(s*8, self.max_coords) # x, y for each point
+        self.pool = nn.MaxPool2d(3, 3)
 
         self.dropout = nn.Dropout2d(p=0.2)
     
@@ -228,7 +227,7 @@ class DwgKeyPointsModel(nn.Module):
         bs, _, _, _ = x.shape
         x = F.adaptive_avg_pool2d(x, 1).reshape(bs, -1)
         x = self.dropout(x)
-        x = self.fc0(x)
+
         x = self.fc1(x)
 
         # force output to be in range [0..1]
@@ -264,7 +263,7 @@ def get_ram_mem_usage():
     #print(psutil.virtual_memory())  # physical memory usage
     return psutil.virtual_memory()[2]
 
-def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epoch=0,epochs=0, plot_prediction=False, plot_folder='runs'):
+def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epoch=0, epochs=0, plot_prediction=False, plot_folder='runs'):
     '''
     runs entire loader via model.train()
     calculates loss and precision metrics
@@ -515,5 +514,5 @@ if __name__ == "__main__":
         limit_records=600,
         rebuild=False,
         use_cache=True,
-        epochs=100,
+        epochs=10,
         checkpoint_interval=None)
