@@ -10,7 +10,7 @@ from plot import plot_batch_grid
 #model = DwgKeyPointsModel(max_points=max_points, num_coordinates=num_coordinates).to(config.device)
 #model.load_state_dict(checkpoint['model_state_dict'])
 
-model = DwgKeyPointsResNet50(pretrained=True, requires_grad=False, max_points=100)
+model = DwgKeyPointsResNet50(requires_grad=False, max_points=100)
 model.to(config.device)
 model.eval()
 

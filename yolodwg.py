@@ -15,9 +15,6 @@ from torch.utils.tensorboard import SummaryWriter
 import torchvision.models as models
 from torch.optim.lr_scheduler import StepLR
 
-# pip insatll pretrainedmodels
-import pretrainedmodels
-
 from PIL import Image
 
 from processing import build_data
@@ -201,16 +198,13 @@ class DwgKeyPointsResNet50(nn.Module):
     '''
     https://debuggercafe.com/advanced-facial-keypoint-detection-with-pytorch/
     '''
-    def __init__(self, pretrained, requires_grad, max_points=100, num_coordinates=2, num_channels=3):
+    def __init__(self, requires_grad, max_points=100, num_coordinates=2, num_channels=3):
         super(DwgKeyPointsResNet50, self).__init__()
         self.max_points = max_points
         self.num_coordinates = num_coordinates
         self.max_coords = self.max_points * self.num_coordinates
 
-        if pretrained == True:
-            self.model = pretrainedmodels.__dict__['resnet50'](pretrained='imagenet')
-        else:
-            self.model = pretrainedmodels.__dict__['resnet50'](pretrained=None)
+        self.model = models.resnet50(pretrained=True)
 
         if requires_grad == True:
             for param in self.model.parameters():
@@ -222,14 +216,13 @@ class DwgKeyPointsResNet50(nn.Module):
             print('Freezing intermediate layer parameters...')
 
         # change the final layer
-        self.l0 = nn.Linear(2048, self.max_coords)
+        self.l0 = nn.Linear(1000, self.max_coords)
 
     def forward(self, x):
         # get the batch size only, ignore (c, h, w)
         batch, _, _, _ = x.shape
 
-        x = self.model.features(x)
-        x = F.adaptive_avg_pool2d(x, 1).reshape(batch, -1)
+        x = self.model(x)
         l0 = self.l0(x)
         return l0
 #------------------------------
@@ -252,7 +245,7 @@ class DwgKeyPointsModel(nn.Module):
         self.conv3 = nn.Conv2d(s*4, s*8, kernel_size=3)
 
         self.fc1 = nn.Linear(s*8, self.max_coords) # x, y for each point
-        self.pool = nn.MaxPool2d(3, 3)
+        self.pool = nn.MaxPool2d(2, 2)
 
         self.dropout = nn.Dropout2d(p=0.2)
     
@@ -471,7 +464,7 @@ def run(
 
     # create model
     # model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
-    model = DwgKeyPointsResNet50(pretrained=True,requires_grad=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
+    model = DwgKeyPointsResNet50(requires_grad=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
     model.to(config.device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -504,7 +497,7 @@ def run(
                                 epoch=epoch,
                                 epochs=epochs,
                                 plot_folder=tb_log_path,
-                                plot_prediction=True)
+                                plot_prediction=False)
 
         last_epoch = (epoch == epochs - 1)
         should_save_checkpoint = (checkpoint_interval is not None and epoch % checkpoint_interval == 0) or last_epoch
