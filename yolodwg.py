@@ -6,6 +6,7 @@ import pandas as pd
 import time
 from pathlib import Path
 import psutil
+import matplotlib.pyplot as plt
 
 import torch
 import torch.nn as nn
@@ -301,6 +302,7 @@ def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epo
                         true_keypoints=targets,
                         predictions=out,
                         plot_save_file=f'{plot_folder}/train_{epoch}_{batch_i}.png')
+            plt.close()
 
         loss.backward()
         optimizer.step()
@@ -309,14 +311,14 @@ def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epo
     
     return running_loss / counter
 
-def val_epoch(model, loader, device, criterion, epoch=0, epochs=0, plot_prediction=False, plot_folder=None):
+def val_epoch(model, loader, device, epoch=0, epochs=0, plot_prediction=False, plot_folder=None):
     '''
     runs entire loader via model.eval()
     calculates loss and precision metrics
     plots predictions and truth (time consuming)
     '''
     model.eval()
-
+    criterion = nn.MSELoss()
     running_loss = 0.0
     counter = 0
     with torch.no_grad():
@@ -337,8 +339,8 @@ def val_epoch(model, loader, device, criterion, epoch=0, epochs=0, plot_predicti
 
             out = model(imgs)
             # print(counter, torch.mean(imgs).item(), torch.mean(out).item())
-            #loss = criterion(out, targets)
-            #running_loss += loss.item()
+            loss = criterion(out, targets)
+            running_loss += loss.item()
 
             if plot_prediction and plot_folder is not None:
                 plot_batch_grid(
@@ -346,6 +348,7 @@ def val_epoch(model, loader, device, criterion, epoch=0, epochs=0, plot_predicti
                             true_keypoints=targets,
                             predictions=out,
                             plot_save_file=f'{plot_folder}/validation_{epoch}_{batch_i}.png')
+                plt.close() # reduce memory
 
             predictions = out.reshape(batch_size, -1, model.num_coordinates)
             
@@ -396,7 +399,7 @@ def run(
         limit_records=None,
         use_cache=True,
         checkpoint_interval=10,
-        lr=0.01
+        lr=0.001
     ):
 
     runs_dir = 'runs'
@@ -457,19 +460,22 @@ def run(
                                 model=model,
                                 loader=val_loader,
                                 device=config.device,
-                                criterion=criterion,
+                                #criterion=criterion,
                                 epoch=epoch,
                                 epochs=epochs,
                                 plot_folder=tb_log_path,
-                                plot_prediction=False)
+                                plot_prediction=True)
 
         last_epoch = (epoch == epochs - 1)
         should_save_checkpoint = (checkpoint_interval is not None and epoch % checkpoint_interval == 0) or last_epoch
         if should_save_checkpoint:
             save_checkpoint(model, optimizer, criterion, checkpoint_path=f'{tb_log_path}/checkpoint{epoch}.weights', precision=precision, recall=recall, f1=f1)
             # Display generated figure in tensorboard
-            fig = plot_loader_predictions(loader=val_loader, model=model, epoch=epoch, plot_folder=tb_log_path)
-            tb.add_figure('predicted', fig, epoch)
+            figs = plot_loader_predictions(loader=val_loader, model=model, epoch=epoch, plot_folder=tb_log_path)
+            for i, fig in enumerate(figs):
+                tb.add_figure(f'predicted_{i}', fig, epoch)
+
+            plt.close()
 
         if recall >= best_recall and precision >= best_precision:
             best_precision = precision

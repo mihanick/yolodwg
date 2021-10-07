@@ -14,6 +14,7 @@ def plot_loader_predictions(loader, model, epoch=0, plot_folder=None):
         return
 
     model.eval()
+    figs = []
     with torch.no_grad():
         for i, (imgs, targets) in enumerate(loader):
 
@@ -24,14 +25,15 @@ def plot_loader_predictions(loader, model, epoch=0, plot_folder=None):
             out = model(imgs)
             out = out.view((out.shape[0], model.max_points, -1))
 
-            plot_batch_grid(
+            fig = plot_batch_grid(
                         input_images=imgs,
                         true_keypoints=targets,
                         predictions=out,
                         plot_save_file=f'{plot_folder}/prediction_{epoch}_{i}.png')
-
+            figs.append(fig)
             if i > 3:
                 break
+    return figs
     
 
 def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_save_file=None):
@@ -71,7 +73,7 @@ def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_sa
 
     if plot_save_file is not None:
         plt.savefig(plot_save_file)
-    plt.close()
+    return fig
 
 def plot_image_prediction_truth(input_image, predicted_keypoints=None, true_keypoints=None):
     '''
@@ -104,5 +106,3 @@ def plot_image_prediction_truth(input_image, predicted_keypoints=None, true_keyp
         for p in range(orig_keypoint.shape[0]):
             plt.plot(orig_keypoint[p, 0], orig_keypoint[p, 1], 'g.')
             plt.text(orig_keypoint[p, 0], orig_keypoint[p, 1], f'{p}')
-    
-    return plt
