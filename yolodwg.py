@@ -170,12 +170,12 @@ class EntityDataset(Dataset):
         return img, lbl
 
 class DwgDataset:
-    def __init__(self, batch_size=32, cache_file=None, ids_file=None, image_folder='data/images'):
+    def __init__(self, 
+                    entities,
+                    batch_size=32):
+
         self.batch_size = batch_size
-        if cache_file is not None:
-            self.entities = EntityDataset.from_cache(cache_file)
-        elif ids_file is not None:
-            self.entities = EntityDataset.from_json_ids_pickle_labels_img_folder(ids_file=ids_file, image_folder=image_folder)
+        self.entities = entities
 
         self.img_size = self.entities.img_size
 
@@ -454,10 +454,9 @@ def val_epoch(model, loader, device, epoch=0, epochs=0, plot_prediction=False, p
     return running_loss / counter, precision, recall, f1
 
 def run(
-        cache_file='dataset128.cache',
         image_folder='data/images',
-        ids_file='ids128.txt',
-        pandas_pickle='dataset128.pickle',
+        data_file_path='data/ids128.json',
+        
         batch_size=4,
         epochs=20,
         checkpoint_interval=10,
@@ -480,14 +479,14 @@ def run(
     os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
     tb = SummaryWriter(tb_log_path)
 
-    # create dataset
-    dwg_dataset = DwgDataset(
-                    batch_size=batch_size,
-                    cache_file=cache_file,
-                    pandas_pickle=pandas_pickle,
-                    ids_file=ids_file,
-                    image_folder=image_folder
-                    )
+    # create dataset from images or from cache
+    entities = EntityDataset()
+    if data_file_path.endswith('.json'):
+        entities.from_json_ids_pickle_labels_img_folder(ids_file=data_file_path, image_folder=image_folder)
+    elif data_file_path.endswith('.cache'):
+        entities.from_cache(cache_file=data_file_path)
+
+    dwg_dataset = DwgDataset(entities=entities, batch_size=batch_size)
 
     train_loader = dwg_dataset.train_loader
     val_loader   = dwg_dataset.val_loader
@@ -559,16 +558,31 @@ def run(
 
 # TODO: generate points by triades
 # TODO: calculate precision
-# TODO: parse arguments
 
 # TODO: augment: rotate, flip, crop
 
+def parse_opt():
+    parser = argparse.ArgumentParser()
+    parser.add_argument('--data', type=str, default='data/ids128.json', help='Path to ids.json or dataset.cache of dataset')
+    parser.add_argument('--image-folder', type=str, default='data/images', help='Path to source images')
+
+    parser.add_argument('--epochs', type=int, default=30)
+    parser.add_argument('--batch-size', type=int, default=32, help='Size of batch. Keep as max as GPU mem allows')
+    parser.add_argument('--lr', type=float, default=0.001, help='Starting learning rate')
+
+    parser.add_argument('--checkpoint-interval', type=int, default=None, help='Save checkpoint every n epoch')
+
+    opt = parser.parse_args()
+    return vars(opt) # https://stackoverflow.com/questions/16878315/what-is-the-right-way-to-treat-python-argparse-namespace-as-a-dictionary
+
 if __name__ == "__main__":
+    opt = parse_opt()
     run(
-        batch_size=32,
-        img_size=128,
-        limit_records=600,
-        rebuild=False,
-        use_cache=True,
-        epochs=10,
-        checkpoint_interval=None)
+        image_folder=opt['image_folder'],
+        data_file_path=opt['data'],
+
+        batch_size=opt['batch_size'],
+
+        epochs=opt['epochs'],
+        checkpoint_interval=opt['checkpoint_interval'],
+        lr=opt['lr'])
