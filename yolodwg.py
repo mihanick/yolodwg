@@ -116,18 +116,19 @@ class EntityDataset(Dataset):
                 dim_count = len(dims)
 
                 # [class_id, dim_id, pnt_id, x, y, good?]
-                labels = np.zeros([dim_count * len(self.pnt_classes), 1 + 1 + self.num_coordinates + 1], dtype=float)
+                labels = np.zeros([dim_count * len(self.pnt_classes), 1 + 1 + 1 + self.num_coordinates + 1], dtype=float)
                 # labels = np.zeros([dim_count, self.num_classes, self.num_pnt_classes, self.num_coordinates], dtype=float)
 
                 label_row_counter = 0
                 for dim_no, dim_row in dims.iterrows():
                     for pnt_id, pnt_class in enumerate(self.pnt_classes):
-                        labels[label_row_counter, 0] = class_id + 1 # AlignedDimension (nonzero)
+                        labels[label_row_counter, 0] = dim_no + 1 # dimension number
                         labels[label_row_counter, 1] = pnt_id + 1 # point_id (nonzero)
                         for coord_id, coord_name in enumerate(self.coordinates):
                             coordval = dim_row[f'{pnt_class}.{coord_name}'] #  ['XLine1Point','XLine2Point','DimLinePoint'].[X,Y]
                             labels[label_row_counter, 1 + 1 + coord_id] = coordval
                         labels[label_row_counter, 1 + 1 + self.num_coordinates] = 0 # good
+                        labels[label_row_counter,1+ 1 + 1 + self.num_coordinates] = class_id + 1 # AlignedDimension (nonzero)
                         label_row_counter += 1
 
                 # remember maximum number of points
