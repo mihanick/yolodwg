@@ -237,14 +237,17 @@ class DwgKeyPointsResNet50(nn.Module):
             for param in self.model.parameters():
                 param.requires_grad = False
 
+        self.bn = nn.BatchNorm1d(1000)
+        self.do = nn.Dropout()
         # add the final layer
         self.l0 = nn.Linear(1000, self.max_coords)
 
     def forward(self, x):
         # get the batch size only, ignore (c, h, w)
         batch, _, _, _ = x.shape
-
         x = self.model(x)
+        x = self.bn(x)
+        x = self.do(x)
         l0 = self.l0(x)
         return l0
 
@@ -277,19 +280,19 @@ class DwgKeyPointsModel(nn.Module):
         self.dropout = nn.Dropout2d(p=0.5)
     
     def forward(self, x):
-        x = F.leaky_relu(self.conv1(x))
+        x = F.relu(self.conv1(x))
+        x = self.pool(x)
         x = self.batchnorm1(x)
+        x = F.relu(self.conv2(x))
         x = self.pool(x)
-        x = F.leaky_relu(self.conv2(x))
         x = self.batchnorm2(x)
+        x = F.relu(self.conv3(x))
         x = self.pool(x)
-        x = F.leaky_relu(self.conv3(x))
         x = self.batchnorm3(x)
-        x = self.pool(x)
 
         bs, _, _, _ = x.shape
         x = F.adaptive_avg_pool2d(x, 1).reshape(bs, -1)
-        #x = self.dropout(x)
+        x = self.dropout(x)
 
         x = self.fc1(x)
 
@@ -492,13 +495,13 @@ def run(
     val_loader   = dwg_dataset.val_loader
 
     # create model
-    model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
-    #model = DwgKeyPointsResNet50(requires_grad=False, pretrained=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
+    #model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
+    model = DwgKeyPointsResNet50(requires_grad=False, pretrained=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
     model.to(config.device)
 
-    #optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
-    scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    #optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.85)
+    scheduler = None #StepLR(optimizer, step_size=10, gamma=0.1)
     #criterion = nn.MSELoss()
     criterion = nn.SmoothL1Loss()
 
@@ -567,9 +570,9 @@ def parse_opt():
     parser.add_argument('--data', type=str, default='data/dataset128.cache', help='Path to ids.json or dataset.cache of dataset')
     parser.add_argument('--image-folder', type=str, default='data/images', help='Path to source images')
 
-    parser.add_argument('--epochs', type=int, default=100)
-    parser.add_argument('--batch-size', type=int, default=32, help='Size of batch. Keep as max as GPU mem allows')
-    parser.add_argument('--lr', type=float, default=0.005, help='Starting learning rate')
+    parser.add_argument('--epochs', type=int, default=600)
+    parser.add_argument('--batch-size', type=int, default=256, help='Size of batch. Keep as max as GPU mem allows')
+    parser.add_argument('--lr', type=float, default=0.001, help='Starting learning rate')
 
     parser.add_argument('--checkpoint-interval', type=int, default=None, help='Save checkpoint every n epoch')
 
