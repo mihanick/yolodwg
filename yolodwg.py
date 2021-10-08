@@ -192,7 +192,6 @@ class DwgDataset:
 
         self.train_loader = torch.utils.data.DataLoader(self.entities, batch_size=batch_size, sampler=train_sampler, collate_fn=custom_collate, shuffle=False, drop_last=False)
         self.val_loader   = torch.utils.data.DataLoader(self.entities, batch_size=batch_size, sampler=val_sampler, collate_fn=custom_collate, shuffle=False, drop_last=False)
-        
 #------------------------------
 class DwgKeyPointsResNet50(nn.Module):
     '''
@@ -243,22 +242,29 @@ class DwgKeyPointsModel(nn.Module):
         self.conv2 = nn.Conv2d(s*2, s*4, kernel_size=3)
         self.conv3 = nn.Conv2d(s*4, s*8, kernel_size=3)
 
+        self.batchnorm1 = nn.BatchNorm2d(s*2)
+        self.batchnorm2 = nn.BatchNorm2d(s*4)
+        self.batchnorm3 = nn.BatchNorm2d(s*8)
+
         self.fc1 = nn.Linear(s*8, self.max_coords) # x, y for each point
         self.pool = nn.MaxPool2d(2, 2)
 
         self.dropout = nn.Dropout2d(p=0.2)
     
     def forward(self, x):
-        x = F.relu(self.conv1(x))
+        x = F.leaky_relu(self.conv1(x))
+        x = self.batchnorm1(x)
         x = self.pool(x)
-        x = F.relu(self.conv2(x))
+        x = F.leaky_relu(self.conv2(x))
+        x = self.batchnorm2(x)
         x = self.pool(x)
-        x = F.relu(self.conv3(x))
+        x = F.leaky_relu(self.conv3(x))
+        x = self.batchnorm3(x)
         x = self.pool(x)
 
         bs, _, _, _ = x.shape
         x = F.adaptive_avg_pool2d(x, 1).reshape(bs, -1)
-        x = self.dropout(x)
+        #x = self.dropout(x)
 
         x = self.fc1(x)
 
@@ -462,8 +468,8 @@ def run(
     val_loader   = dwg_dataset.val_loader
 
     # create model
-    # model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
-    model = DwgKeyPointsResNet50(requires_grad=False, pretrained=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
+    model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
+    #model = DwgKeyPointsResNet50(requires_grad=False, pretrained=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
     model.to(config.device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -497,7 +503,7 @@ def run(
                                 epoch=epoch,
                                 epochs=epochs,
                                 plot_folder=tb_log_path,
-                                plot_prediction=False)
+                                plot_prediction=True)
 
         last_epoch = (epoch == epochs - 1)
         should_save_checkpoint = (checkpoint_interval is not None and epoch % checkpoint_interval == 0) or last_epoch
@@ -526,32 +532,18 @@ def run(
     print(f'[DONE] @{time.time() - start:.0f} sec. Training achieved best recall: {best_recall:.4f} best precision: {best_precision:.4f}. This run data is at "{tb_log_path}"')
     tb.close()
 
-def plot_val_dataset():
-    dwg_dataset = DwgDataset(batch_size=4, img_size=128, limit_records=50, rebuild=False)
-
-    train_loader = dwg_dataset.train_loader
-    val_loader   = dwg_dataset.val_loader
-
-    chp_path = 'runs/1/best.weights'
-    checkpoint = torch.load(chp_path)
-    max_points = checkpoint['max_points']
-    num_coordinates = checkpoint['num_coordinates']
-    model = DwgKeyPointsModel(max_points=max_points, num_coordinates=num_coordinates).to(config.device)
-    model.load_state_dict(checkpoint['model_state_dict'])
-    
-    return plot_loader_predictions(val_loader, model)
 # TODO: generate points by triades
 # TODO: calculate precision
 # TODO: parse arguments
-# TODO: play with architecture, fully convolutional resnet50
+
 # TODO: augment: rotate, flip, crop
 
 if __name__ == "__main__":
     run(
         batch_size=32,
         img_size=128,
-        limit_records=12000,
-        rebuild=True,
+        limit_records=600,
+        rebuild=False,
         use_cache=True,
-        epochs=100,
+        epochs=10,
         checkpoint_interval=None)
