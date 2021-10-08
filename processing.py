@@ -6,11 +6,19 @@ Queries dwg data from mongo database and stores it in pandas pickle
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
-import os
+import json
 from pathlib import Path
 from pymongo import MongoClient
 
-def build_data(rebuild=False, img_size=512, limit_records=None):
+from yolodwg import EntityDataset
+
+
+def build_data(
+        mongo_db_connection_string='mongodb://192.168.1.49:27017',
+        img_size=512,
+        limit_records=None,
+        max_entities=None,
+        max_labels=None):
     '''
     returns pandas dataframe with dwg data and list of image ids
 
@@ -18,49 +26,39 @@ def build_data(rebuild=False, img_size=512, limit_records=None):
     img_size - adjust input images to this size
     limit_records - query this number of records from db
     '''
-    pickle_file = f'dataset{img_size}.pickle'
-    group_ids_file = f'ids{img_size}.txt'
+
     result_ids = []
 
-    # We will have to recreate pickle from db if it is not exist
-    if not os.path.exists(pickle_file):
-        rebuild = True
+    client = MongoClient(mongo_db_connection_string)
+    db = client.geometry3
+    objects = db.objects
 
-    if rebuild:
-        client = MongoClient('mongodb://192.168.1.49:27017')
-        db = client.geometry3
-        objects = db.objects
+    group_ids = list(objects.find().distinct('GroupId'))
+    df = pd.DataFrame()
 
-        group_ids = list(objects.find().distinct('GroupId'))
-        df = pd.DataFrame()
+    progress_bar = tqdm(enumerate(group_ids), total=limit_records)
+    for i, group_id in progress_bar:
+        if limit_records and i > limit_records:
+            break
+        data = query_collection_to_dataframe(db, group_id, img_size, max_entities=max_entities, max_labels=max_labels)
 
-        progress_bar = tqdm(enumerate(group_ids), total=limit_records)
-        for i, group_id in progress_bar:
-            if limit_records and i > limit_records:
-                break
-            data = query_collection_to_dataframe(db, group_id, img_size)
+        if data is not None:
+            df = pd.concat([df, data])
+            result_ids.append(group_id)
+        progress_bar.set_description(f'Querying database {group_id}: {len(data) if data is not None else 0} annotations')
 
-            if data is not None:
-                df = pd.concat([df, data])
-                result_ids.append(group_id)
-            progress_bar.set_description(f'Querying database {group_id}: {len(data) if data is not None else 0} annotations')
-
-        df['ClassName'] = df['ClassName'].astype('category')
-        df['GroupId'] = df['GroupId'].astype('category')
-
-        df.to_pickle(pickle_file)
-        with open(group_ids_file, 'w') as f:
-            for img_id in result_ids:
-                f.write(img_id+'\n')
-
-    else:
-        df = pd.read_pickle(pickle_file)
-        with open(group_ids_file) as f:
-            result_ids = f.read().splitlines()
+    df['ClassName'] = df['ClassName'].astype('category')
+    df['GroupId'] = df['GroupId'].astype('category')
 
     return df, result_ids
 
-def query_collection_to_dataframe(db=None, group_id=None, img_size=512, max_entities=250, min_entities=8):
+def query_collection_to_dataframe(
+                                    db=None,
+                                    group_id=None,
+                                    img_size=512,
+                                    max_entities=250,
+                                    min_entities=8,
+                                    max_labels=15):
     '''
     Queries mongo objects collection to dataframe.
     Expands certain columns, like StartPoint to StartPoint.X, StartPoint.Y
@@ -110,9 +108,10 @@ def query_collection_to_dataframe(db=None, group_id=None, img_size=512, max_enti
     #check group_id contain annotations
     #if len(drawing_annotations) == 0:
     #    return
-    # limit to 20 labels per image
-    if len(drawing_annotations) > 10:
-        return
+    
+    if max_labels is not None:
+        if len(drawing_annotations) > max_labels:
+            return
 
     # now we create dataframe
     df = pd.DataFrame(drawing_annotations)
@@ -232,5 +231,52 @@ def expand_columns(df, column_names):
         res = pd.concat([res, res1], axis = 1)
     return res
 
+
+# Commandline functions------------------------------------------------------------
+def save_json_ids_pickle_labels(
+                                mongo_db_connection_string='',
+
+                                img_size=512,
+                                limit_records=None,
+                                max_entities=None,
+                                max_labels=None,
+
+                                labels_pandas_file='data/labels.pickle',
+                                ids_file='data/ids.json'):
+
+    df, ids = build_data(
+                        mongo_db_connection_string=mongo_db_connection_string,
+                        img_size=img_size,
+                        limit_records=limit_records,
+                        max_entities=max_entities,
+                        max_labels=max_labels
+                        )
+    json_data = {
+        'img_size':img_size,
+        'labels_pandas_file':labels_pandas_file,
+        'ids':ids,
+        }
+    with open(ids_file, "w") as f:
+        json.dump(json_data, f, indent=4)
+
+    df.to_pickle(labels_pandas_file)
+
+def cache_dataset(ids_file='data/ids128.json', cache_path='data/dataset128.cache'):
+    ed = EntityDataset()
+    ed.from_json_ids_pickle_labels_img_folder(ids_file)
+    ed.save_cache(cache_path)
+
 if __name__ == "__main__":
-    df,_ = build_data(rebuild=True, img_size=64, limit_records=100)
+    ids = 'data/ids128.json'
+    labels = 'data/labels_128.pickle'
+    cache = 'data/dataset128.cache'
+
+    save_json_ids_pickle_labels(
+        mongo_db_connection_string='mongodb://192.168.1.49:27017',
+        img_size=128,
+        limit_records=600,
+        max_entities=250,
+        max_labels=15,
+        labels_pandas_file=labels,
+        ids_file=ids)
+    cache_dataset(ids, cache)

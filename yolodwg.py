@@ -1,12 +1,16 @@
 import os
-from torch.utils.data.sampler import SequentialSampler
 from tqdm import tqdm
-import numpy as np
-import pandas as pd
 import time
-from pathlib import Path
 import psutil
+import json
+from pathlib import Path
+import argparse
+
+import pandas as pd
+import numpy as np
 import matplotlib.pyplot as plt
+
+from PIL import Image
 
 import torch
 import torch.nn as nn
@@ -14,15 +18,13 @@ import torch.nn.functional as F
 from torch.utils.tensorboard import SummaryWriter
 import torchvision.models as models
 from torch.optim.lr_scheduler import StepLR
+from torch.utils.data import Dataset, SequentialSampler, SubsetRandomSampler
 
-from PIL import Image
 
-from processing import build_data
 from plot import plot_batch_grid, plot_loader_predictions
 import config
-
 #------------------------------
-from torch.utils.data import Dataset, SubsetRandomSampler
+
 
 def open_square(src_img_path, to_size=512):
     '''
@@ -63,17 +65,90 @@ class EntityDataset(Dataset):
     '''
     Dataset of images - labels (points of dimensions)
     '''
-    def __init__(self, img_size=512, rebuild=False, limit_records=None, use_cache=False):
+    def from_cache(self, cache_file):
         '''
-        Dataset of images and
-        img_size - return images in specified square size
-        rebuild - queries entities from mongodb and stores to pandas dataframe dataset{img_size}.pickle
-        limit_records - limit max number of records queried from database
-        use_cache - torch.save data to speed up loading small datasets
+        Reads from saved data using torch
+        '''
+        
+        try: # file could not exist, or torch might not load it
+            cached_data = torch.load(cache_file)
+            # check cached validity:
+            self.img_size = cached_data['img_size']
+            self.max_labels = cached_data['max_labels']
+            self.data = cached_data['data']
+
+        except Exception as e:
+            print(f'Could not load cache: {e}')
+
+        print(f'Entity dataset. Images: {len(self.data)} Max points:{self.max_labels}.')
+
+    def save_cache(self, save_path):
+        # save creaed data as cache
+        torch.save({
+                    'img_size':self.img_size, 
+                    'max_labels': self.max_labels, 
+                    'data':self.data
+                    }, 
+                    save_path)
+
+    def from_json_ids_pickle_labels_img_folder(self, ids_file='ids.json', image_folder='data/images'):
+        '''
+        Creates from pandas pickle reading img_ids using images in image_folder
+        '''
+
+        with open(ids_file, mode='r') as f:
+            json_data = json.load(f)
+
+        self.img_size = json_data['img_size']
+        self.ids = json_data['ids']
+        labels_pandas_file = json_data['labels_pandas_file']
+        df = pd.read_pickle(labels_pandas_file)
+        
+        progress_bar = tqdm(enumerate(self.ids), total=len(self.ids))
+        for group_no, group_id in progress_bar:
+            source_image_annotated = f'{image_folder}/annotated_{group_id}.png'
+            source_image_stripped = f'{image_folder}/stripped_{group_id}.png'
+            img, max_size = open_square(source_image_stripped, to_size=self.img_size)
+            # self.num_image_channels = max(self.num_image_channels, img.getchannel())
+
+            for class_id, class_name in enumerate(self.classes):
+                dims = df[(df['GroupId'] == group_id) & (df['ClassName'] == class_name)]
+                dim_count = len(dims)
+
+                # [class_id, dim_id, pnt_id, x, y, good?]
+                labels = np.zeros([dim_count * len(self.pnt_classes), 1 + 1 + self.num_coordinates + 1], dtype=float)
+                # labels = np.zeros([dim_count, self.num_classes, self.num_pnt_classes, self.num_coordinates], dtype=float)
+
+                label_row_counter = 0
+                for dim_no, dim_row in dims.iterrows():
+                    for pnt_id, pnt_class in enumerate(self.pnt_classes):
+                        labels[label_row_counter, 0] = class_id + 1 # AlignedDimension (nonzero)
+                        labels[label_row_counter, 1] = pnt_id + 1 # point_id (nonzero)
+                        for coord_id, coord_name in enumerate(self.coordinates):
+                            coordval = dim_row[f'{pnt_class}.{coord_name}'] #  ['XLine1Point','XLine2Point','DimLinePoint'].[X,Y]
+                            labels[label_row_counter, 1 + 1 + coord_id] = coordval
+                        labels[label_row_counter, 1 + 1 + self.num_coordinates] = 0 # good
+                        label_row_counter += 1
+
+                # remember maximum number of points
+                if label_row_counter > self.max_labels:
+                    self.max_labels = label_row_counter
+
+            labels[:, 2:4] /= self.img_size # scale coordinates to [0..1]
+            labels[:, 3] = 1 - labels[:, 3] # invert y coord as on the drawing it will be from top left, not from bottom left
+            self.data.append((img, labels))
+
+            progress_bar.set_description(f'Gathering dataset. max labels: {self.max_labels}. {group_id}: labels: {label_row_counter}')
+
+        print(f'Entity dataset. Images: {len(self.data)} Max points:{self.max_labels}.')
+
+    def __init__(self):
+        '''
+
         '''
 
         self.max_labels = 0
-        self.img_size = img_size
+        self.img_size = None
         self.num_image_channels = 3
 
         self.classes = ['AlignedDimension']
@@ -84,64 +159,8 @@ class EntityDataset(Dataset):
         self.num_pnt_classes = len(self.pnt_classes)
         self.num_coordinates = len(self.coordinates)
 
+        self.ids = []
         self.data = []
-
-        recreate_cache = True
-        self.cached_data_file = f'dataset{img_size}.cache'
-        if use_cache:
-            try: # file could not exist, or torch might not load it
-                cached_data = torch.load(self.cached_data_file)
-                # check cached validity:
-                if cached_data['img_size'] == img_size:
-                    self.max_labels = cached_data['max_labels']
-                    self.data = cached_data['data']
-                    recreate_cache = False
-            except:
-                recreate_cache = True
-
-        if recreate_cache:
-            df, ids = build_data(rebuild=rebuild, img_size=img_size, limit_records=limit_records)
-
-            progress_bar = tqdm(enumerate(ids), total=len(ids))
-            for group_no, group_id in progress_bar:
-                source_image_annotated = f'./data/images/annotated_{group_id}.png'
-                source_image_stripped = f'./data/images/stripped_{group_id}.png'
-                img, max_size = open_square(source_image_stripped, to_size=self.img_size)
-                # self.num_image_channels = max(self.num_image_channels, img.getchannel())
-
-                for class_id, class_name in enumerate(self.classes):
-                    dims = df[(df['GroupId'] == group_id) & (df['ClassName'] == class_name)]
-                    dim_count = len(dims)
-
-                    # [class_id, dim_id, pnt_id, x, y, good?]
-                    labels = np.zeros([dim_count * len(self.pnt_classes), 1 + 1 + self.num_coordinates + 1], dtype=float)
-                    # labels = np.zeros([dim_count, self.num_classes, self.num_pnt_classes, self.num_coordinates], dtype=float)
-
-                    label_row_counter = 0
-                    for dim_no, dim_row in dims.iterrows():
-                        for pnt_id, pnt_class in enumerate(self.pnt_classes):
-                            labels[label_row_counter, 0] = class_id + 1 # AlignedDimension (nonzero)
-                            labels[label_row_counter, 1] = pnt_id + 1 # point_id (nonzero)
-                            for coord_id, coord_name in enumerate(self.coordinates):
-                                coordval = dim_row[f'{pnt_class}.{coord_name}'] #  ['XLine1Point','XLine2Point','DimLinePoint'].[X,Y]
-                                labels[label_row_counter, 1 + 1 + coord_id] = coordval
-                            labels[label_row_counter, 1 + 1 + self.num_coordinates] = 0 # good
-                            label_row_counter += 1
-
-                    # remember maximum number of points
-                    if label_row_counter > self.max_labels:
-                        self.max_labels = label_row_counter
-
-                labels[:, 2:4] /= img_size # scale coordinates to [0..1]
-                labels[:, 3] = 1 - labels[:, 3] # invert y coord as on the drawing it will be from top left, not from bottom left
-                self.data.append((img, labels))
-
-                progress_bar.set_description(f'Gathering dataset. max labels: {self.max_labels}. {group_id}: labels: {label_row_counter}')
-            # save creaed data as cache
-            if use_cache:
-                torch.save({'img_size':self.img_size, 'max_labels': self.max_labels, 'data':self.data}, self.cached_data_file)
-
-        print(f'Entity dataset. Images: {len(self.data)} Max points:{self.max_labels}.')
 
     def __len__(self):
         return len(self.data)
@@ -151,11 +170,14 @@ class EntityDataset(Dataset):
         return img, lbl
 
 class DwgDataset:
-    def __init__(self, batch_size=4, img_size=512, limit_records=None, rebuild=False, use_cache=False):
+    def __init__(self, batch_size=32, cache_file=None, ids_file=None, image_folder='data/images'):
         self.batch_size = batch_size
+        if cache_file is not None:
+            self.entities = EntityDataset.from_cache(cache_file)
+        elif ids_file is not None:
+            self.entities = EntityDataset.from_json_ids_pickle_labels_img_folder(ids_file=ids_file, image_folder=image_folder)
 
-        self.entities = EntityDataset(img_size=img_size, rebuild=rebuild, limit_records=limit_records, use_cache=use_cache)
-        self.img_size = img_size
+        self.img_size = self.entities.img_size
 
         data_len = len(self.entities)
 
@@ -169,6 +191,8 @@ class DwgDataset:
         val_indices   = indices[:val_split]
         train_indices = indices[val_split:]
 
+        # we need to keep order for debug purposes
+        # for release could change to SubsetRandomSampler
         train_sampler = SequentialSampler(train_indices) 
         val_sampler   = SequentialSampler(val_indices)
 
@@ -192,6 +216,7 @@ class DwgDataset:
 
         self.train_loader = torch.utils.data.DataLoader(self.entities, batch_size=batch_size, sampler=train_sampler, collate_fn=custom_collate, shuffle=False, drop_last=False)
         self.val_loader   = torch.utils.data.DataLoader(self.entities, batch_size=batch_size, sampler=val_sampler, collate_fn=custom_collate, shuffle=False, drop_last=False)
+
 #------------------------------
 class DwgKeyPointsResNet50(nn.Module):
     '''
@@ -429,12 +454,12 @@ def val_epoch(model, loader, device, epoch=0, epochs=0, plot_prediction=False, p
     return running_loss / counter, precision, recall, f1
 
 def run(
+        cache_file='dataset128.cache',
+        image_folder='data/images',
+        ids_file='ids128.txt',
+        pandas_pickle='dataset128.pickle',
         batch_size=4,
         epochs=20,
-        img_size=512,
-        rebuild=False,
-        limit_records=None,
-        use_cache=True,
         checkpoint_interval=10,
         lr=0.001
     ):
@@ -458,10 +483,10 @@ def run(
     # create dataset
     dwg_dataset = DwgDataset(
                     batch_size=batch_size,
-                    img_size=img_size,
-                    limit_records=limit_records,
-                    rebuild=rebuild,
-                    use_cache=use_cache,
+                    cache_file=cache_file,
+                    pandas_pickle=pandas_pickle,
+                    ids_file=ids_file,
+                    image_folder=image_folder
                     )
 
     train_loader = dwg_dataset.train_loader
