@@ -267,14 +267,15 @@ def cache_dataset(ids_file='data/ids128.json', cache_path='data/dataset128.cache
     ed.save_cache(cache_path)
 
 if __name__ == "__main__":
-    ids = 'data/ids128.json'
-    labels = 'data/labels_128.pickle'
-    cache = 'data/dataset128.cache'
+    img_size=512
+    ids = f'data/ids{img_size}.json'
+    labels = f'data/labels_{img_size}.pickle'
+    cache = f'data/dataset{img_size}.cache'
 
     save_json_ids_pickle_labels(
         mongo_db_connection_string='mongodb://192.168.1.49:27017',
-        img_size=128,
-        limit_records=600,
+        img_size=img_size,
+        limit_records=None,
         max_entities=250,
         max_labels=15,
         labels_pandas_file=labels,

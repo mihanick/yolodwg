@@ -274,7 +274,7 @@ class DwgKeyPointsModel(nn.Module):
         self.fc1 = nn.Linear(s*8, self.max_coords) # x, y for each point
         self.pool = nn.MaxPool2d(2, 2)
 
-        self.dropout = nn.Dropout2d(p=0.2)
+        self.dropout = nn.Dropout2d(p=0.5)
     
     def forward(self, x):
         x = F.leaky_relu(self.conv1(x))
@@ -496,7 +496,8 @@ def run(
     #model = DwgKeyPointsResNet50(requires_grad=False, pretrained=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
     model.to(config.device)
 
-    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    #optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.9)
     scheduler = StepLR(optimizer, step_size=10, gamma=0.1)
     #criterion = nn.MSELoss()
     criterion = nn.SmoothL1Loss()
@@ -527,7 +528,7 @@ def run(
                                 epoch=epoch,
                                 epochs=epochs,
                                 plot_folder=tb_log_path,
-                                plot_prediction=True)
+                                plot_prediction=False)
 
         last_epoch = (epoch == epochs - 1)
         should_save_checkpoint = (checkpoint_interval is not None and epoch % checkpoint_interval == 0) or last_epoch
@@ -563,12 +564,12 @@ def run(
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default='data/ids128.json', help='Path to ids.json or dataset.cache of dataset')
+    parser.add_argument('--data', type=str, default='data/dataset128.cache', help='Path to ids.json or dataset.cache of dataset')
     parser.add_argument('--image-folder', type=str, default='data/images', help='Path to source images')
 
-    parser.add_argument('--epochs', type=int, default=30)
+    parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--batch-size', type=int, default=32, help='Size of batch. Keep as max as GPU mem allows')
-    parser.add_argument('--lr', type=float, default=0.001, help='Starting learning rate')
+    parser.add_argument('--lr', type=float, default=0.005, help='Starting learning rate')
 
     parser.add_argument('--checkpoint-interval', type=int, default=None, help='Save checkpoint every n epoch')
 
