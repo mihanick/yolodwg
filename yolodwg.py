@@ -376,24 +376,31 @@ def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epo
     
     return running_loss / counter
 
-def val_epoch(model, loader, device, epoch=0, epochs=0, plot_prediction=False, plot_folder=None):
+def val_epoch(model, loader, criterion, device, epoch=0, epochs=0, plot_prediction=False, plot_folder=None):
     '''
     runs entire loader via model.eval()
     calculates loss and precision metrics
     plots predictions and truth (time consuming)
     '''
     model.eval()
-    criterion = nn.MSELoss()
+
     running_loss = 0.0
     counter = 0
     with torch.no_grad():
-        valid = []
+        tp = 0
+        fp = 0
+        tn = 0
+        fn = 0
+
+        precision = 0.0
+        recall = 0.0
+        f1 = 0.0
 
         progress_bar = tqdm(enumerate(loader), total=len(loader))
         for batch_i, (imgs, ground_truth) in progress_bar:
             counter += 1
 
-            progress_bar.set_description(f"[{epoch} / {epochs}]Val  . Valid predictions:{np.sum(valid):.0f}. Runnning loss: {running_loss / counter:.4f}")
+            progress_bar.set_description(f"[{epoch} / {epochs}]Val  . Precision:{precision:.3f}. Recall:{recall:.3f}. F1:{f1:3f} Runnning loss: {running_loss / counter:.3f}")
 
             batch_size = ground_truth.shape[0]
 
@@ -420,10 +427,11 @@ def val_epoch(model, loader, device, epoch=0, epochs=0, plot_prediction=False, p
             for i, points in enumerate(ground_truth):
                 # https://stasiuk.medium.com/pose-estimation-metrics-844c07ba0a78
                 # point is predicted correctly if it is within 0.05 of bound
-
                 prediction = predictions[i]
+
+                empty_points_count = 0
                 for j, point in enumerate(points):
-                    # number of filled in true points is generally 
+                    # number of filled in true points is generally
                     # less than max_poits, so some points are filled
                     # with zeroes :2 first two columns - class, point_id
                     empty_true_point = torch.sum(point[:2]) == 0
@@ -447,13 +455,24 @@ def val_epoch(model, loader, device, epoch=0, epochs=0, plot_prediction=False, p
                         min_distance_from_current_point = torch.min(distances_from_current_point)
 
                         if min_distance_from_current_point <= tolerance:
-                            prediction_correct = 1
-                        valid.append(prediction_correct)
-        # tp, fp, fn = 1, 1, 1
+                            tp += 1
+                        else:
+                            fp += 1
+                    else:
+                        empty_points_count += 1
+                # https://stackoverflow.com/questions/60922782/how-can-i-count-the-number-of-1s-and-0s-in-the-second-dimension-of-a-pytorch-t
+                predicted_empty_points = (prediction == 0).all(dim=1)
+                # https://stackoverflow.com/questions/62150659/how-to-convert-a-tensor-of-booleans-to-ints-in-pytorch
+                predicted_empty_points_count = predicted_empty_points.long().sum().item()
+                tn += min(empty_points_count, predicted_empty_points_count)
+                fn += empty_points_count - tn
+        
         # TODO: class metrics
-        precision = np.mean(valid) # tp / (tp + fp)
-        recall = 0 # tp / (tp + fn)
-        f1 = 0 #2 * precision * recall /(precision + recall)
+        accuracy = (tp + tn) / (tp + tn + fp + fn)
+        precision = tp / (tp + fp)
+        recall = tp / (tp + fn)
+        if precision + recall != 0.0:
+            f1 = 2 * precision * recall / (precision + recall)
     return running_loss / counter, precision, recall, f1
 
 def run(
@@ -495,13 +514,13 @@ def run(
     val_loader   = dwg_dataset.val_loader
 
     # create model
-    #model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
-    model = DwgKeyPointsResNet50(requires_grad=False, pretrained=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
+    model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
+    #model = DwgKeyPointsResNet50(requires_grad=False, pretrained=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
     model.to(config.device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     #optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.85)
-    scheduler = None #StepLR(optimizer, step_size=10, gamma=0.1)
+    scheduler = None #StepLR(optimizer, step_size=10, gamma=0.95)
     #criterion = nn.MSELoss()
     criterion = nn.SmoothL1Loss()
 
@@ -527,7 +546,7 @@ def run(
                                 model=model,
                                 loader=val_loader,
                                 device=config.device,
-                                #criterion=criterion,
+                                criterion=criterion,
                                 epoch=epoch,
                                 epochs=epochs,
                                 plot_folder=tb_log_path,
@@ -555,8 +574,8 @@ def run(
         tb.add_scalar("loss/train", train_loss, epoch)
         tb.add_scalar("loss/val", val_loss, epoch)
         tb.add_scalar("accuracy/precision", precision, epoch)
-        #tb.add_scalar("accuracy/recall", recall, epoch)
-        #tb.add_scalar("accuracy/f1", f1, epoch)
+        tb.add_scalar("accuracy/recall", recall, epoch)
+        tb.add_scalar("accuracy/f1", f1, epoch)
     print(f'[DONE] @{time.time() - start:.0f} sec. Training achieved best recall: {best_recall:.4f} best precision: {best_precision:.4f}. This run data is at "{tb_log_path}"')
     tb.close()
 
@@ -570,8 +589,8 @@ def parse_opt():
     parser.add_argument('--data', type=str, default='data/dataset128.cache', help='Path to ids.json or dataset.cache of dataset')
     parser.add_argument('--image-folder', type=str, default='data/images', help='Path to source images')
 
-    parser.add_argument('--epochs', type=int, default=600)
-    parser.add_argument('--batch-size', type=int, default=256, help='Size of batch. Keep as max as GPU mem allows')
+    parser.add_argument('--epochs', type=int, default=10)
+    parser.add_argument('--batch-size', type=int, default=32, help='Size of batch. Keep as max as GPU mem allows')
     parser.add_argument('--lr', type=float, default=0.001, help='Starting learning rate')
 
     parser.add_argument('--checkpoint-interval', type=int, default=None, help='Save checkpoint every n epoch')
