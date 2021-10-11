@@ -298,15 +298,9 @@ class DwgKeyPointsModel(nn.Module):
         bs, _, _, _ = x.shape
         x = F.adaptive_avg_pool2d(x, 1)
         x = x.reshape(bs, -1)
-        # x = self.dropout(x)
+        x = self.dropout(x)
 
         x = self.fc1(x)
-
-        # force output to be in range [0..1]
-        xmin = torch.min(x).item()
-        xmax = torch.max(x).item()
-        x -= xmin
-        x /= (xmax - xmin + 1e-12) # avoid zero
 
         return x
 #------------------------------
@@ -379,18 +373,15 @@ def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epo
         imgs = imgs.to(device)
         targets = targets.to(device)
 
-        # only coordinates, plus flatten
-        #targets = targets[:, :, 2:4]
-        #targets = targets.reshape(targets.size(0), -1)
+        batch_size = targets.shape[0]
 
         optimizer.zero_grad()
 
         out = model(imgs)
 
-        loss = criterion(out, targets)
-        #bs = targets.shape[0]
-        #tt = targets[:, :, 2:4]
-        #loss = nn.MSELoss()(out, tt.reshape(bs, -1))
+        #loss = criterion(out, targets)
+        loss = criterion(out, targets[:, :, 2:4].reshape(batch_size, -1))
+
         running_loss += loss.item()
 
         #debug plot
@@ -438,15 +429,10 @@ def val_epoch(model, loader, criterion, device, epoch=0, epochs=0, plot_predicti
             batch_size = ground_truth.shape[0]
 
             imgs = imgs.to(device)
-            #targets = ground_truth[:, :, 2:4]
-            #targets = targets.to(device)
-            #
-            #targets = targets.reshape(targets.size(0), -1)
 
             out = model(imgs)
-            # print(counter, torch.mean(imgs).item(), torch.mean(out).item())
 
-            loss = criterion(out, ground_truth)
+            loss = criterion(out, ground_truth[:, :, 2:4].reshape(batch_size, -1))
             running_loss += loss.item()
 
             if plot_prediction and plot_folder is not None:
@@ -481,8 +467,8 @@ def val_epoch(model, loader, criterion, device, epoch=0, epochs=0, plot_predicti
                         # bound box (min and max coordinates of all points of this dimension):
                         min_x, min_y, max_x, max_y = torch.min(points_of_same_dim[:, 2]), torch.min(points_of_same_dim[:, 3]), torch.max(points_of_same_dim[:, 2]), torch.max(points_of_same_dim[:, 3])
                         boundbox_diagonal = torch.sqrt((max_x - min_x) ** 2 + (max_y - min_y) ** 2)
-                        #tolerance = 0.05 * boundbox_diagonal
-                        tolerance = 0.01
+                        tolerance = 0.05 * boundbox_diagonal
+                        #tolerance = 0.05
 
                         # find all distances from current point to predictions
                         distances_from_current_point = torch.sqrt((prediction[:, 0] - pnt_x) ** 2 + (prediction[:, 1] - pnt_y) **2)
@@ -557,9 +543,11 @@ def run(
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     #optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.85)
     scheduler = None #StepLR(optimizer, step_size=10, gamma=0.95)
-    #criterion = nn.MSELoss()
+
+    criterion = nn.MSELoss()
     #criterion = nn.SmoothL1Loss()
-    criterion = non_zero_loss(config.device)
+    #criterion = non_zero_loss(config.device)
+    
 
     best_recall = 0.0
     best_precision = 0.0
@@ -576,7 +564,7 @@ def run(
                                 scheduler=scheduler,
                                 epoch=epoch,
                                 epochs=epochs,
-                                plot_prediction=False,
+                                plot_prediction=True,
                                 plot_folder=tb_log_path)
 
         val_loss, precision, recall, f1 = val_epoch(
@@ -628,7 +616,7 @@ def parse_opt():
     parser.add_argument('--image-folder', type=str, default='data/images', help='Path to source images')
 
     parser.add_argument('--epochs', type=int, default=40)
-    parser.add_argument('--batch-size', type=int, default=256, help='Size of batch. Keep as max as GPU mem allows')
+    parser.add_argument('--batch-size', type=int, default=32, help='Size of batch. Keep as max as GPU mem allows')
     parser.add_argument('--lr', type=float, default=0.001, help='Starting learning rate')
 
     parser.add_argument('--checkpoint-interval', type=int, default=30, help='Save checkpoint every n epoch')
