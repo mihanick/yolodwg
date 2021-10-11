@@ -3,6 +3,7 @@ Queries dwg data from mongo database and stores it in pandas pickle
 '''
 # https://stackoverflow.com/questions/16249736/how-to-import-data-from-mongodb-to-pandas
 
+from numpy.core.shape_base import _stack_dispatcher
 import pandas as pd
 import numpy as np
 from tqdm import tqdm
@@ -18,7 +19,8 @@ def build_data(
         img_size=512,
         limit_records=None,
         max_entities=None,
-        max_labels=None):
+        max_labels=None,
+        skip_empty_annotations=False):
     '''
     returns pandas dataframe with dwg data and list of image ids
 
@@ -40,7 +42,13 @@ def build_data(
     for i, group_id in progress_bar:
         if limit_records and i > limit_records:
             break
-        data = query_collection_to_dataframe(db, group_id, img_size, max_entities=max_entities, max_labels=max_labels)
+        data = query_collection_to_dataframe(
+                                                db=db, 
+                                                group_id=group_id, 
+                                                img_size=img_size, 
+                                                max_entities=max_entities, 
+                                                max_labels=max_labels,
+                                                skip_empty_annotations=skip_empty_annotations)
 
         if data is not None:
             df = pd.concat([df, data])
@@ -58,7 +66,8 @@ def query_collection_to_dataframe(
                                     img_size=512,
                                     max_entities=250,
                                     min_entities=8,
-                                    max_labels=15):
+                                    max_labels=15,
+                                    skip_empty_annotations=False):
     '''
     Queries mongo objects collection to dataframe.
     Expands certain columns, like StartPoint to StartPoint.X, StartPoint.Y
@@ -106,8 +115,9 @@ def query_collection_to_dataframe(
     drawing_annotations = list(objects.find(query_annotations))
 
     #check group_id contain annotations
-    #if len(drawing_annotations) == 0:
-    #    return
+    if skip_empty_annotations:
+        if len(drawing_annotations) == 0:
+            return
     
     if max_labels is not None:
         if len(drawing_annotations) > max_labels:
@@ -240,7 +250,7 @@ def save_json_ids_pickle_labels(
                                 limit_records=None,
                                 max_entities=None,
                                 max_labels=None,
-
+                                skip_empty_annotations=False,
                                 labels_pandas_file='data/labels.pickle',
                                 ids_file='data/ids.json'):
 
@@ -249,7 +259,8 @@ def save_json_ids_pickle_labels(
                         img_size=img_size,
                         limit_records=limit_records,
                         max_entities=max_entities,
-                        max_labels=max_labels
+                        max_labels=max_labels,
+                        skip_empty_annotations=skip_empty_annotations
                         )
     json_data = {
         'img_size':img_size,
@@ -261,16 +272,16 @@ def save_json_ids_pickle_labels(
 
     df.to_pickle(labels_pandas_file)
 
-def cache_dataset(ids_file='data/ids128.json', cache_path='data/dataset128.cache'):
+def cache_dataset(ids_file='data/ids128.json', cache_path='data/ids128.cache'):
     ed = EntityDataset()
     ed.from_json_ids_pickle_labels_img_folder(ids_file)
     ed.save_cache(cache_path)
 
 if __name__ == "__main__":
-    img_size=512
+    img_size=128
     ids = f'data/ids{img_size}.json'
     labels = f'data/labels_{img_size}.pickle'
-    cache = f'data/dataset{img_size}.cache'
+    cache = f'data/ids{img_size}.cache'
 
     save_json_ids_pickle_labels(
         mongo_db_connection_string='mongodb://192.168.1.49:27017',
@@ -278,6 +289,7 @@ if __name__ == "__main__":
         limit_records=None,
         max_entities=250,
         max_labels=15,
+        skip_empty_annotations=True,
         labels_pandas_file=labels,
         ids_file=ids)
     cache_dataset(ids, cache)

@@ -119,27 +119,27 @@ class EntityDataset(Dataset):
                 labels = np.zeros([dim_count * len(self.pnt_classes), 1 + 1 + 1 + self.num_coordinates + 1], dtype=float)
                 # labels = np.zeros([dim_count, self.num_classes, self.num_pnt_classes, self.num_coordinates], dtype=float)
 
-                label_row_counter = 0
+                pnt_row_counter = 0
                 for dim_no, dim_row in dims.iterrows():
                     for pnt_id, pnt_class in enumerate(self.pnt_classes):
-                        labels[label_row_counter, 0] = dim_no + 1 # dimension number
-                        labels[label_row_counter, 1] = pnt_id + 1 # point_id (nonzero)
+                        labels[pnt_row_counter, 0] = dim_no + 1 # dimension number
+                        labels[pnt_row_counter, 1] = pnt_id + 1 # point_id (nonzero)
                         for coord_id, coord_name in enumerate(self.coordinates):
                             coordval = dim_row[f'{pnt_class}.{coord_name}'] #  ['XLine1Point','XLine2Point','DimLinePoint'].[X,Y]
-                            labels[label_row_counter, 1 + 1 + coord_id] = coordval
-                        labels[label_row_counter, 1 + 1 + self.num_coordinates] = 0 # good
-                        labels[label_row_counter, 1 + 1 + 1 + self.num_coordinates] = class_id + 1 # AlignedDimension (nonzero)
-                        label_row_counter += 1
+                            labels[pnt_row_counter, 1 + 1 + coord_id] = coordval
+                        labels[pnt_row_counter, 1 + 1 + self.num_coordinates] = 0 # good
+                        labels[pnt_row_counter, 1 + 1 + 1 + self.num_coordinates] = class_id + 1 # AlignedDimension (nonzero)
+                        pnt_row_counter += 1
 
                 # remember maximum number of points
-                if label_row_counter > self.max_labels:
-                    self.max_labels = label_row_counter
+                if pnt_row_counter > self.max_labels:
+                    self.max_labels = pnt_row_counter
 
             labels[:, 2:4] /= self.img_size # scale coordinates to [0..1]
             labels[:, 3] = 1 - labels[:, 3] # invert y coord as on the drawing it will be from top left, not from bottom left
             self.data.append((img, labels))
 
-            progress_bar.set_description(f'Gathering dataset. max labels: {self.max_labels}. {group_id}: labels: {label_row_counter}')
+            progress_bar.set_description(f'Gathering dataset. max labels: {self.max_labels}. {group_id}: labels: {pnt_row_counter}')
 
         print(f'Entity dataset. Images: {len(self.data)} Max points:{self.max_labels}.')
 
@@ -275,14 +275,14 @@ class DwgKeyPointsModel(nn.Module):
         self.conv2 = nn.Conv2d(s*2, s*4, kernel_size=3)
         self.conv3 = nn.Conv2d(s*4, s*8, kernel_size=3)
 
-        self.batchnorm1 = nn.BatchNorm2d(s*2)
-        self.batchnorm2 = nn.BatchNorm2d(s*4)
-        self.batchnorm3 = nn.BatchNorm2d(s*8)
+        #self.batchnorm1 = nn.BatchNorm2d(s*2)
+        #self.batchnorm2 = nn.BatchNorm2d(s*4)
+        #self.batchnorm3 = nn.BatchNorm2d(s*8)
 
         self.fc1 = nn.Linear(s*8, self.max_coords) # x, y for each point
         self.pool = nn.MaxPool2d(2, 2)
 
-        self.dropout = nn.Dropout2d(p=0.5)
+        self.dropout = nn.Dropout2d(p=0.2)
     
     def forward(self, x):
         x = F.relu(self.conv1(x))
@@ -296,16 +296,17 @@ class DwgKeyPointsModel(nn.Module):
         # x = self.batchnorm3(x)
 
         bs, _, _, _ = x.shape
-        x = F.adaptive_avg_pool2d(x, 1).reshape(bs, -1)
-        #x = self.dropout(x)
+        x = F.adaptive_avg_pool2d(x, 1)
+        x = x.reshape(bs, -1)
+        # x = self.dropout(x)
 
         x = self.fc1(x)
 
         # force output to be in range [0..1]
-        #xmin = torch.min(x).item()
-        #xmax = torch.max(x).item()
-        #x -= xmin
-        #x /= (xmax - xmin + 1e-12) # avoid zero
+        xmin = torch.min(x).item()
+        xmax = torch.max(x).item()
+        x -= xmin
+        x /= (xmax - xmin + 1e-12) # avoid zero
 
         return x
 #------------------------------
@@ -338,23 +339,25 @@ class non_zero_loss(nn.Module):
     def __init__(self, device):
         super().__init__()
         self.device = device
-        self.mse = nn.SmoothL1Loss()
+        self.mse = nn.MSELoss()
 
     def forward(self, outs, ground_truth):
         batch_size = ground_truth.shape[0]
         loss = 0
+        counter = 0
         for i in range(batch_size):
             bgt = ground_truth[i]
-            non_empty_targets = bgt[bgt[:, 5]>0]
+            non_empty_targets = bgt#[bgt[:, 5] > 0]
             n_true_pnts = non_empty_targets.shape[0]
             if n_true_pnts > 0:
+                counter += 1
                 outs_unf = outs[i].view(-1, 2) # unflatten
                 outs_compared = outs_unf[:n_true_pnts] # only compare number of points 
                 non_empty_compared = non_empty_targets[:, 2:4].to(self.device) # only compare coordinates
                 c_loss = self.mse(outs_compared, non_empty_compared)
-                assert not torch.isnan(c_loss), ""
+
                 loss += c_loss
-        return loss
+        return loss / counter
 
 def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epoch=0, epochs=0, plot_prediction=False, plot_folder='runs'):
     '''
@@ -547,8 +550,8 @@ def run(
     val_loader   = dwg_dataset.val_loader
 
     # create model
-    #model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
-    model = DwgKeyPointsResNet50(requires_grad=True, pretrained=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
+    model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
+    #model = DwgKeyPointsResNet50(requires_grad=True, pretrained=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
     model.to(config.device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -621,14 +624,14 @@ def run(
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default='data/dataset128.cache', help='Path to ids.json or dataset.cache of dataset')
+    parser.add_argument('--data', type=str, default='data/ids128.cache', help='Path to ids.json or dataset.cache of dataset')
     parser.add_argument('--image-folder', type=str, default='data/images', help='Path to source images')
 
     parser.add_argument('--epochs', type=int, default=40)
-    parser.add_argument('--batch-size', type=int, default=16, help='Size of batch. Keep as max as GPU mem allows')
+    parser.add_argument('--batch-size', type=int, default=256, help='Size of batch. Keep as max as GPU mem allows')
     parser.add_argument('--lr', type=float, default=0.001, help='Starting learning rate')
 
-    parser.add_argument('--checkpoint-interval', type=int, default=None, help='Save checkpoint every n epoch')
+    parser.add_argument('--checkpoint-interval', type=int, default=30, help='Save checkpoint every n epoch')
 
     opt = parser.parse_args()
     return vars(opt) # https://stackoverflow.com/questions/16878315/what-is-the-right-way-to-treat-python-argparse-namespace-as-a-dictionary
