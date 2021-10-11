@@ -20,7 +20,7 @@ def plot_loader_predictions(loader, model, epoch=0, plot_folder=None):
 
             imgs = imgs.to(config.device)
             targets = targets.to(config.device)
-            targets = targets[:, :, -3:-1]
+            #targets = targets[:, :, -3:-1]
 
             out = model(imgs)
             out = out.view((out.shape[0], model.max_points, -1))
@@ -62,8 +62,10 @@ def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_sa
         pred = None
 
         if true_keypoints is not None:
-            tkp = true_keypoints[i].detach().cpu().numpy()
-            tkp = np.reshape(tkp, (-1, 2))
+            tkp = true_keypoints[i,:,2:4].detach().cpu().numpy()
+            if (tkp.shape[1] == 0): # Handle plot of empty ground_truth
+                tkp = None
+            #tkp = np.reshape(tkp, (-1, 2))
         if predictions is not None:
             pred = predictions[i].detach().cpu().numpy()
             pred = np.reshape(pred, (-1, 2))
@@ -98,10 +100,11 @@ def plot_image_prediction_truth(input_image, predicted_keypoints=None, true_keyp
         output_keypoint = predicted_keypoints * img_size
         for p in range(output_keypoint.shape[0]):
             plt.plot(output_keypoint[p, 0], output_keypoint[p, 1], 'r.')
-            plt.text(output_keypoint[p, 0], output_keypoint[p, 1], f'{p}')
+            # TODO: display dimno and pnt class here
+            # plt.text(output_keypoint[p, 0], output_keypoint[p, 1], f'{p}')
 
     if true_keypoints is not None:
         orig_keypoint = true_keypoints * img_size
         for p in range(orig_keypoint.shape[0]):
             plt.plot(orig_keypoint[p, 0], orig_keypoint[p, 1], 'g.')
-            plt.text(orig_keypoint[p, 0], orig_keypoint[p, 1], f'{p}')
+            # plt.text(orig_keypoint[p, 0], orig_keypoint[p, 1], f'{p}')

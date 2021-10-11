@@ -128,7 +128,7 @@ class EntityDataset(Dataset):
                             coordval = dim_row[f'{pnt_class}.{coord_name}'] #  ['XLine1Point','XLine2Point','DimLinePoint'].[X,Y]
                             labels[label_row_counter, 1 + 1 + coord_id] = coordval
                         labels[label_row_counter, 1 + 1 + self.num_coordinates] = 0 # good
-                        labels[label_row_counter,1+ 1 + 1 + self.num_coordinates] = class_id + 1 # AlignedDimension (nonzero)
+                        labels[label_row_counter, 1 + 1 + 1 + self.num_coordinates] = class_id + 1 # AlignedDimension (nonzero)
                         label_row_counter += 1
 
                 # remember maximum number of points
@@ -201,7 +201,7 @@ class DwgDataset:
         def custom_collate(sample):
             imgs = torch.zeros((self.batch_size, self.entities.num_image_channels, self.img_size, self.img_size), dtype=torch.float32)
             # batch, label_id, class_id, dim_id, x, y, good
-            lbls = torch.zeros((self.batch_size, self.entities.max_labels, 1 + 1 + self.entities.num_coordinates + 1), dtype=torch.float32)
+            lbls = torch.zeros((self.batch_size, self.entities.max_labels, 1 + 1 + 1 + self.entities.num_coordinates + 1), dtype=torch.float32)
 
             for i in range(len(sample)):
                 img, lbl = sample[i]
@@ -247,9 +247,9 @@ class DwgKeyPointsResNet50(nn.Module):
         # get the batch size only, ignore (c, h, w)
         batch, _, _, _ = x.shape
         x = self.model(x)
-        x = self.bn(x)
-        x = self.do(x)
+        # x = self.bn(x)
         l0 = self.l0(x)
+        x = self.do(x)
         return l0
 
 #------------------------------
@@ -283,17 +283,17 @@ class DwgKeyPointsModel(nn.Module):
     def forward(self, x):
         x = F.relu(self.conv1(x))
         x = self.pool(x)
-        x = self.batchnorm1(x)
+        #x = self.batchnorm1(x)
         x = F.relu(self.conv2(x))
         x = self.pool(x)
-        x = self.batchnorm2(x)
+        #x = self.batchnorm2(x)
         x = F.relu(self.conv3(x))
         x = self.pool(x)
-        x = self.batchnorm3(x)
+        # x = self.batchnorm3(x)
 
         bs, _, _, _ = x.shape
         x = F.adaptive_avg_pool2d(x, 1).reshape(bs, -1)
-        x = self.dropout(x)
+        #x = self.dropout(x)
 
         x = self.fc1(x)
 
@@ -330,6 +330,28 @@ def get_ram_mem_usage():
     #print(psutil.virtual_memory())  # physical memory usage
     return psutil.virtual_memory()[2]
 
+class non_zero_loss(nn.Module):
+    def __init__(self, device):
+        super().__init__()
+        self.device = device
+        self.mse = nn.SmoothL1Loss()
+
+    def forward(self, outs, ground_truth):
+        batch_size = ground_truth.shape[0]
+        loss = 0
+        for i in range(batch_size):
+            bgt = ground_truth[i]
+            non_empty_targets = bgt[bgt[:, 5]>0]
+            n_true_pnts = non_empty_targets.shape[0]
+            if n_true_pnts > 0:
+                outs_unf = outs[i].view(-1, 2) # unflatten
+                outs_compared = outs_unf[:n_true_pnts] # only compare number of points 
+                non_empty_compared = non_empty_targets[:,2:4].to(self.device) # only compare coordinates
+                c_loss = self.mse(outs_compared.flatten(), non_empty_compared.flatten())
+                assert not torch.isnan(c_loss), ""
+                loss += c_loss
+        return loss
+
 def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epoch=0, epochs=0, plot_prediction=False, plot_folder='runs'):
     '''
     runs entire loader via model.train()
@@ -351,8 +373,8 @@ def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epo
         targets = targets.to(device)
 
         # only coordinates, plus flatten
-        targets = targets[:, :, -3:-1]
-        targets = targets.reshape(targets.size(0), -1)
+        #targets = targets[:, :, 2:4]
+        #targets = targets.reshape(targets.size(0), -1)
 
         optimizer.zero_grad()
 
@@ -401,24 +423,26 @@ def val_epoch(model, loader, criterion, device, epoch=0, epochs=0, plot_predicti
         for batch_i, (imgs, ground_truth) in progress_bar:
             counter += 1
 
-            progress_bar.set_description(f"[{epoch} / {epochs}]Val  . Precision:{precision:.3f}. Recall:{recall:.3f}. F1:{f1:3f} Runnning loss: {running_loss / counter:.3f}")
+            progress_bar.set_description(f"[{epoch} / {epochs}]Val  . Precision:{precision:.4f}. Recall:{recall:.4f}. F1:{f1:4f} Runnning loss: {running_loss / counter:.4f}")
 
             batch_size = ground_truth.shape[0]
 
             imgs = imgs.to(device)
-            targets = ground_truth[:, :, -3:-1]
-            targets = targets.to(device)
-            targets = targets.reshape(targets.size(0), -1)
+            #targets = ground_truth[:, :, 2:4]
+            #targets = targets.to(device)
+            #
+            #targets = targets.reshape(targets.size(0), -1)
 
             out = model(imgs)
             # print(counter, torch.mean(imgs).item(), torch.mean(out).item())
-            loss = criterion(out, targets)
+
+            loss = criterion(out, ground_truth)
             running_loss += loss.item()
 
             if plot_prediction and plot_folder is not None:
                 plot_batch_grid(
                             input_images=imgs,
-                            true_keypoints=targets,
+                            true_keypoints=ground_truth,
                             predictions=out,
                             plot_save_file=f'{plot_folder}/validation_{epoch}_{batch_i}.png')
                 plt.close() # reduce memory
@@ -434,20 +458,21 @@ def val_epoch(model, loader, criterion, device, epoch=0, epochs=0, plot_predicti
                 for j, point in enumerate(points):
                     # number of filled in true points is generally
                     # less than max_poits, so some points are filled
-                    # with zeroes :2 first two columns - class, point_id
-                    empty_true_point = torch.sum(point[:2]) == 0
-                    prediction_correct = 0
+                    # with class_id == 0
+                    empty_true_point = point[5] == 0
+
                     
                     if not empty_true_point:
-                        n_dim = point[1] # dimension identifier for this point
+                        n_dim = point[0] # dimension identifier for this point
                         pnt_x, pnt_y = point[2], point[3]
-                        points_of_same_dim = points[points[:, 1]==n_dim]
+                        points_of_same_dim = points[points[:, 0]==n_dim]
                         points_of_same_dim = points_of_same_dim[points_of_same_dim[:, 2]!=0]
 
                         # bound box (min and max coordinates of all points of this dimension):
                         min_x, min_y, max_x, max_y = torch.min(points_of_same_dim[:, 2]), torch.min(points_of_same_dim[:, 3]), torch.max(points_of_same_dim[:, 2]), torch.max(points_of_same_dim[:, 3])
                         boundbox_diagonal = torch.sqrt((max_x - min_x) ** 2 + (max_y - min_y) ** 2)
-                        tolerance = 0.05 * boundbox_diagonal
+                        #tolerance = 0.05 * boundbox_diagonal
+                        tolerance = 0.01
 
                         # find all distances from current point to predictions
                         distances_from_current_point = torch.sqrt((prediction[:, 0] - pnt_x) ** 2 + (prediction[:, 1] - pnt_y) **2)
@@ -515,15 +540,16 @@ def run(
     val_loader   = dwg_dataset.val_loader
 
     # create model
-    model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
-    #model = DwgKeyPointsResNet50(requires_grad=False, pretrained=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
+    #model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
+    model = DwgKeyPointsResNet50(requires_grad=True, pretrained=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
     model.to(config.device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     #optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.85)
     scheduler = None #StepLR(optimizer, step_size=10, gamma=0.95)
     #criterion = nn.MSELoss()
-    criterion = nn.SmoothL1Loss()
+    #criterion = nn.SmoothL1Loss()
+    criterion = non_zero_loss(config.device)
 
     best_recall = 0.0
     best_precision = 0.0
@@ -587,11 +613,11 @@ def run(
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default='data/dataset128.cache', help='Path to ids.json or dataset.cache of dataset')
+    parser.add_argument('--data', type=str, default='data/ids128.json', help='Path to ids.json or dataset.cache of dataset')
     parser.add_argument('--image-folder', type=str, default='data/images', help='Path to source images')
 
-    parser.add_argument('--epochs', type=int, default=10)
-    parser.add_argument('--batch-size', type=int, default=32, help='Size of batch. Keep as max as GPU mem allows')
+    parser.add_argument('--epochs', type=int, default=400)
+    parser.add_argument('--batch-size', type=int, default=16, help='Size of batch. Keep as max as GPU mem allows')
     parser.add_argument('--lr', type=float, default=0.001, help='Starting learning rate')
 
     parser.add_argument('--checkpoint-interval', type=int, default=None, help='Save checkpoint every n epoch')
