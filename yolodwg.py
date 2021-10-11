@@ -230,7 +230,7 @@ class DwgKeyPointsResNet50(nn.Module):
         self.max_coords = self.max_points * self.num_coordinates
 
         self.model = models.resnet50(pretrained=pretrained)
-
+        self.model.fc = nn.Linear(2048, self.max_coords * 4)
         if requires_grad == True:
             for param in self.model.parameters():
                 param.requires_grad = True
@@ -241,16 +241,20 @@ class DwgKeyPointsResNet50(nn.Module):
         self.bn = nn.BatchNorm1d(1000)
         self.do = nn.Dropout()
         # add the final layer
-        self.l0 = nn.Linear(1000, self.max_coords)
+        self.l0 = nn.Linear(100, self.max_coords)
 
     def forward(self, x):
         # get the batch size only, ignore (c, h, w)
         batch, _, _, _ = x.shape
         x = self.model(x)
+        x = x.reshape(batch, self.max_points, -1)
+        x = F.adaptive_avg_pool2d(x, (self.max_points, 2))
+        x = x.reshape(batch, -1)
+        
         # x = self.bn(x)
-        l0 = self.l0(x)
-        x = self.do(x)
-        return l0
+        # x = self.l0(x)
+        # x = self.do(x)
+        return x
 
 #------------------------------
 class DwgKeyPointsModel(nn.Module):
@@ -346,8 +350,8 @@ class non_zero_loss(nn.Module):
             if n_true_pnts > 0:
                 outs_unf = outs[i].view(-1, 2) # unflatten
                 outs_compared = outs_unf[:n_true_pnts] # only compare number of points 
-                non_empty_compared = non_empty_targets[:,2:4].to(self.device) # only compare coordinates
-                c_loss = self.mse(outs_compared.flatten(), non_empty_compared.flatten())
+                non_empty_compared = non_empty_targets[:, 2:4].to(self.device) # only compare coordinates
+                c_loss = self.mse(outs_compared, non_empty_compared)
                 assert not torch.isnan(c_loss), ""
                 loss += c_loss
         return loss
@@ -381,6 +385,9 @@ def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epo
         out = model(imgs)
 
         loss = criterion(out, targets)
+        #bs = targets.shape[0]
+        #tt = targets[:, :, 2:4]
+        #loss = nn.MSELoss()(out, tt.reshape(bs, -1))
         running_loss += loss.item()
 
         #debug plot
@@ -590,6 +597,7 @@ def run(
 
             plt.close()
 
+        # save checkpoint for best results
         if recall >= best_recall and precision >= best_precision:
             best_precision = precision
             best_recall = recall
@@ -613,10 +621,10 @@ def run(
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default='data/ids128.json', help='Path to ids.json or dataset.cache of dataset')
+    parser.add_argument('--data', type=str, default='data/dataset128.cache', help='Path to ids.json or dataset.cache of dataset')
     parser.add_argument('--image-folder', type=str, default='data/images', help='Path to source images')
 
-    parser.add_argument('--epochs', type=int, default=400)
+    parser.add_argument('--epochs', type=int, default=40)
     parser.add_argument('--batch-size', type=int, default=16, help='Size of batch. Keep as max as GPU mem allows')
     parser.add_argument('--lr', type=float, default=0.001, help='Starting learning rate')
 

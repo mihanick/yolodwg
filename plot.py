@@ -1,12 +1,14 @@
 '''
 Functions to plot predictions and ground truth over input imagess
 '''
-import matplotlib.pyplot as plt
 import numpy as np
 import math
 import torch
 import config
-from tqdm import tqdm
+
+import matplotlib.pyplot as plt
+import matplotlib
+matplotlib.style.use('ggplot')
 
 def plot_loader_predictions(loader, model, epoch=0, plot_folder=None):
     
