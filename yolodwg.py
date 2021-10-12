@@ -136,7 +136,7 @@ class EntityDataset(Dataset):
                     self.max_labels = pnt_row_counter
 
             labels[:, 2:4] /= self.img_size # scale coordinates to [0..1]
-            labels[:, 3] = 1 - labels[:, 3] # invert y coord as on the drawing it will be from top left, not from bottom left
+            #labels[:, 3] = labels[:, 3] # invert y coord as on the drawing it will be from top left, not from bottom left
             self.data.append((img, labels))
 
             progress_bar.set_description(f'Gathering dataset. max labels: {self.max_labels}. {group_id}: labels: {pnt_row_counter}')
@@ -280,7 +280,7 @@ class DwgKeyPointsModel(nn.Module):
         #self.batchnorm3 = nn.BatchNorm2d(s*8)
 
         self.fc1 = nn.Linear(s*8, self.max_coords) # x, y for each point
-        self.pool = nn.MaxPool2d(2, 2)
+        self.pool = nn.AvgPool2d(2, 2)
 
         self.dropout = nn.Dropout2d(p=0.2)
     
@@ -290,6 +290,7 @@ class DwgKeyPointsModel(nn.Module):
         #x = self.batchnorm1(x)
         x = F.relu(self.conv2(x))
         x = self.pool(x)
+
         #x = self.batchnorm2(x)
         x = F.relu(self.conv3(x))
         x = self.pool(x)
@@ -333,7 +334,7 @@ class non_zero_loss(nn.Module):
     def __init__(self, device):
         super().__init__()
         self.device = device
-        self.mse = nn.MSELoss()
+        self.mse = nn.SmoothL1Loss()
 
     def forward(self, outs, ground_truth):
         batch_size = ground_truth.shape[0]
@@ -341,7 +342,7 @@ class non_zero_loss(nn.Module):
         counter = 0
         for i in range(batch_size):
             bgt = ground_truth[i]
-            non_empty_targets = bgt#[bgt[:, 5] > 0]
+            non_empty_targets = bgt[bgt[:, 5] > 0]
             n_true_pnts = non_empty_targets.shape[0]
             if n_true_pnts > 0:
                 counter += 1
@@ -379,8 +380,8 @@ def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epo
 
         out = model(imgs)
 
-        #loss = criterion(out, targets)
-        loss = criterion(out, targets[:, :, 2:4].reshape(batch_size, -1))
+        loss = criterion(out, targets)
+        #loss = criterion(out, targets[:, :, 2:4].reshape(batch_size, -1))
 
         running_loss += loss.item()
 
@@ -432,7 +433,8 @@ def val_epoch(model, loader, criterion, device, epoch=0, epochs=0, plot_predicti
 
             out = model(imgs)
 
-            loss = criterion(out, ground_truth[:, :, 2:4].reshape(batch_size, -1))
+            loss = criterion(out, ground_truth)
+            #loss = criterion(out, ground_truth[:, :, 2:4].reshape(batch_size, -1).to(config.device))
             running_loss += loss.item()
 
             if plot_prediction and plot_folder is not None:
@@ -467,7 +469,7 @@ def val_epoch(model, loader, criterion, device, epoch=0, epochs=0, plot_predicti
                         # bound box (min and max coordinates of all points of this dimension):
                         min_x, min_y, max_x, max_y = torch.min(points_of_same_dim[:, 2]), torch.min(points_of_same_dim[:, 3]), torch.max(points_of_same_dim[:, 2]), torch.max(points_of_same_dim[:, 3])
                         boundbox_diagonal = torch.sqrt((max_x - min_x) ** 2 + (max_y - min_y) ** 2)
-                        tolerance = 0.05 * boundbox_diagonal
+                        tolerance = 0.1 * boundbox_diagonal
                         #tolerance = 0.05
 
                         # find all distances from current point to predictions
@@ -491,8 +493,10 @@ def val_epoch(model, loader, criterion, device, epoch=0, epochs=0, plot_predicti
         
         # TODO: class metrics
         accuracy = (tp + tn) / (tp + tn + fp + fn)
-        precision = tp / (tp + fp)
-        recall = tp / (tp + fn)
+        if tp + fp != 0:
+            precision = tp / (tp + fp)
+        if tp + fn != 0:
+            recall = tp / (tp + fn)
         if precision + recall != 0.0:
             f1 = 2 * precision * recall / (precision + recall)
     return running_loss / counter, precision, recall, f1
@@ -531,7 +535,7 @@ def run(
         entities.from_cache(cache_file=data_file_path)
 
     dwg_dataset = DwgDataset(entities=entities, batch_size=batch_size)
-
+    #dwg_dataset.entities.save_cache('data/ids128.cache')
     train_loader = dwg_dataset.train_loader
     val_loader   = dwg_dataset.val_loader
 
@@ -542,12 +546,12 @@ def run(
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     #optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.85)
-    scheduler = None #StepLR(optimizer, step_size=10, gamma=0.95)
+    scheduler = None 
+    #scheduler = StepLR(optimizer, step_size=10, gamma=0.99)
 
-    criterion = nn.MSELoss()
-    #criterion = nn.SmoothL1Loss()
-    #criterion = non_zero_loss(config.device)
-    
+    #criterion = nn.MSELoss()
+    criterion = nn.SmoothL1Loss()
+    criterion = non_zero_loss(config.device)
 
     best_recall = 0.0
     best_precision = 0.0
@@ -564,7 +568,7 @@ def run(
                                 scheduler=scheduler,
                                 epoch=epoch,
                                 epochs=epochs,
-                                plot_prediction=True,
+                                plot_prediction=False,
                                 plot_folder=tb_log_path)
 
         val_loss, precision, recall, f1 = val_epoch(
@@ -578,18 +582,19 @@ def run(
                                 plot_prediction=False)
 
         last_epoch = (epoch == epochs - 1)
-        should_save_checkpoint = (checkpoint_interval is not None and epoch % checkpoint_interval == 0) or last_epoch
+        checkpoint_is_better = recall != 0 and precision !=0 and (recall >= best_recall and precision >= best_precision)
+        should_save_checkpoint = (checkpoint_interval is not None and epoch % checkpoint_interval == 0) or last_epoch or checkpoint_is_better
         if should_save_checkpoint:
             save_checkpoint(model, optimizer, criterion, checkpoint_path=f'{tb_log_path}/checkpoint{epoch}.weights', precision=precision, recall=recall, f1=f1)
             # Display generated figure in tensorboard
             figs = plot_loader_predictions(loader=val_loader, model=model, epoch=epoch, plot_folder=tb_log_path)
             for i, fig in enumerate(figs):
-                tb.add_figure(f'predicted_{i}', fig, epoch)
+                tb.add_figure(f'checkpoint_{epoch}_{i}', fig, epoch)
 
             plt.close()
 
         # save checkpoint for best results
-        if recall >= best_recall and precision >= best_precision:
+        if checkpoint_is_better:
             best_precision = precision
             best_recall = recall
             save_checkpoint(model, optimizer, criterion, checkpoint_path=f'{tb_log_path}/best.weights', precision=precision, recall=recall, f1=f1)
@@ -615,11 +620,11 @@ def parse_opt():
     parser.add_argument('--data', type=str, default='data/ids128.cache', help='Path to ids.json or dataset.cache of dataset')
     parser.add_argument('--image-folder', type=str, default='data/images', help='Path to source images')
 
-    parser.add_argument('--epochs', type=int, default=40)
-    parser.add_argument('--batch-size', type=int, default=32, help='Size of batch. Keep as max as GPU mem allows')
+    parser.add_argument('--epochs', type=int, default=400)
+    parser.add_argument('--batch-size', type=int, default=256, help='Size of batch. Keep as max as GPU mem allows')
     parser.add_argument('--lr', type=float, default=0.001, help='Starting learning rate')
 
-    parser.add_argument('--checkpoint-interval', type=int, default=30, help='Save checkpoint every n epoch')
+    parser.add_argument('--checkpoint-interval', type=int, default=50, help='Save checkpoint every n epoch')
 
     opt = parser.parse_args()
     return vars(opt) # https://stackoverflow.com/questions/16878315/what-is-the-right-way-to-treat-python-argparse-namespace-as-a-dictionary

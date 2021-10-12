@@ -25,13 +25,13 @@ def plot_loader_predictions(loader, model, epoch=0, plot_folder=None):
             #targets = targets[:, :, -3:-1]
 
             out = model(imgs)
-            out = out.view((out.shape[0], model.max_points, -1))
+            out = out.view((out.shape[0], -1, 2))
 
             fig = plot_batch_grid(
                         input_images=imgs,
                         true_keypoints=targets,
                         predictions=out,
-                        plot_save_file=f'{plot_folder}/prediction_{epoch}_{i}.png')
+                        plot_save_file=f'{plot_folder}/checkpoint_{epoch}_{i}.png')
             figs.append(fig)
             if i > 3:
                 break
@@ -51,31 +51,38 @@ def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_sa
     grid_size = int(math.sqrt(batch_size))
     grid_size = min(3, grid_size)
 
-    fig = plt.figure(figsize=(10, 10))
+    fig = plt.figure(figsize=(7, 7))
 
     #print(f'Plotting images grid:')
     for i, img in enumerate(input_images):
         if i + 1 > grid_size * grid_size:
             break
-        np_img = img.detach().cpu().numpy()
-        np_img = np.transpose(np_img, (1,2,0)) #channels,x,y -> x,y,channels
-
-        tkp  = None
-        pred = None
-
-        if true_keypoints is not None:
-            tkp = true_keypoints[i,:,2:4].detach().cpu().numpy()
-            if (tkp.shape[1] == 0): # Handle plot of empty ground_truth
-                tkp = None
-            #tkp = np.reshape(tkp, (-1, 2))
-        if predictions is not None:
-            pred = predictions[i].detach().cpu().numpy()
-            pred = np.reshape(pred, (-1, 2))
+        input_image = img.detach().cpu().numpy()
+        input_image = np.transpose(input_image, (1,2,0)) #channels,x,y -> x,y,channels
+        img_size = input_image.shape[0]
 
         plt.subplot(grid_size, grid_size, i + 1)
         plt.axis('off')
 
-        plot_image_prediction_truth(np_img, pred, tkp)
+        plt.imshow(input_image)
+
+        if true_keypoints is not None:
+            tkp = true_keypoints[i,:,2:4].detach().cpu().numpy()
+            if (tkp.shape[1] != 0): # Handle plot of empty ground_truth
+                tkp = tkp * img_size
+                for p in range(tkp.shape[0]):
+                    plt.plot(tkp[p, 0], img_size - tkp[p, 1], 'g.')
+                    # plt.text(orig_keypoint[p, 0], orig_keypoint[p, 1], f'{p}')
+
+        if predictions is not None:
+            predicted_keypoints = predictions[i].detach().cpu().numpy()
+            predicted_keypoints = np.reshape(predicted_keypoints, (-1, 2))
+
+            output_keypoint = predicted_keypoints * img_size
+            for p in range(output_keypoint.shape[0]):
+                plt.plot(output_keypoint[p, 0], img_size - output_keypoint[p, 1], 'r.')
+                # TODO: display dimno and pnt class here
+                # plt.text(output_keypoint[p, 0], output_keypoint[p, 1], f'{p}')
 
     if plot_save_file is not None:
         plt.savefig(plot_save_file)
@@ -101,12 +108,12 @@ def plot_image_prediction_truth(input_image, predicted_keypoints=None, true_keyp
     if predicted_keypoints is not None:
         output_keypoint = predicted_keypoints * img_size
         for p in range(output_keypoint.shape[0]):
-            plt.plot(output_keypoint[p, 0], output_keypoint[p, 1], 'r.')
+            plt.plot(output_keypoint[p, 0], img_size - output_keypoint[p, 1], 'r.')
             # TODO: display dimno and pnt class here
             # plt.text(output_keypoint[p, 0], output_keypoint[p, 1], f'{p}')
 
     if true_keypoints is not None:
         orig_keypoint = true_keypoints * img_size
         for p in range(orig_keypoint.shape[0]):
-            plt.plot(orig_keypoint[p, 0], orig_keypoint[p, 1], 'g.')
+            plt.plot(orig_keypoint[p, 0], img_size - orig_keypoint[p, 1], 'g.')
             # plt.text(orig_keypoint[p, 0], orig_keypoint[p, 1], f'{p}')
