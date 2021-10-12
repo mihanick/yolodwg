@@ -309,6 +309,31 @@ class DwgKeyPointsModel(nn.Module):
         x = self.fc1(x)
 
         return x
+
+class DwgKeyPointsHrNet(nn.Module):
+    def __init__(self, max_points=100, num_coordinates=2, num_channels=3):
+        '''
+        Regresses input images to
+        flattened max_points*num_coordinates predictions of keypoints
+        '''
+        super(DwgKeyPointsHrNet, self).__init__()
+        self.max_points = max_points
+        self.num_coordinates = num_coordinates
+        self.max_coords = self.max_points * self.num_coordinates
+        self.num_channels = num_channels
+        
+        from hrnet import HRNet
+        self.model = HRNet(nof_joints=self.max_points)
+        #self.l0 = nn.Linear(100, self.max_coords)
+    
+    def forward(self, x):
+        bs = x.shape[0]
+        x = self.model(x)
+        x = F.adaptive_max_pool2d(x, (2,1))
+        x = x.reshape(bs, -1)
+
+        return x
+
 #------------------------------
 
 def save_checkpoint(model, optimizer, loss, checkpoint_path, precision=0, recall=0, f1=0):
@@ -548,7 +573,8 @@ def run(
     val_loader   = dwg_dataset.val_loader
 
     # create model
-    model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
+    model = DwgKeyPointsHrNet(max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
+    #model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
     #model = DwgKeyPointsResNet50(requires_grad=True, pretrained=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
     model.to(config.device)
 
@@ -629,7 +655,7 @@ def parse_opt():
     parser.add_argument('--image-folder', type=str, default='data/images', help='Path to source images')
 
     parser.add_argument('--epochs', type=int, default=40)
-    parser.add_argument('--batch-size', type=int, default=256, help='Size of batch. Keep as max as GPU mem allows')
+    parser.add_argument('--batch-size', type=int, default=4, help='Size of batch. Keep as max as GPU mem allows')
     parser.add_argument('--lr', type=float, default=0.001, help='Starting learning rate')
 
     parser.add_argument('--checkpoint-interval', type=int, default=10, help='Save checkpoint every n epoch')
