@@ -39,7 +39,7 @@ def open_square(src_img_path, to_size=512):
     max_size = max(src.size)
 
     # https://stackoverflow.com/questions/50898034/how-replace-transparent-with-a-color-in-pillow
-    trg = Image.new("RGB", (max_size, max_size), color=(255, 255, 255))
+    trg = Image.new(mode="RGB", size=(max_size, max_size), color=(255, 255, 255))
 
     # http://espressocode.top/python-pil-paste-and-rotate-method/
     # image is pasted using top left coords
@@ -85,8 +85,8 @@ class EntityDataset(Dataset):
     def save_cache(self, save_path):
         # save creaed data as cache
         torch.save({
-                    'img_size':self.img_size, 
-                    'max_labels': self.max_labels, 
+                    'img_size':self.img_size,
+                    'max_labels': self.max_labels,
                     'data':self.data
                     }, 
                     save_path)
@@ -147,10 +147,12 @@ class EntityDataset(Dataset):
         '''
 
         '''
-
+        
         self.max_labels = 0
         self.img_size = None
         self.num_image_channels = 3
+
+        self.limt_number_of_records = None
 
         self.classes = ['AlignedDimension']
         self.pnt_classes = ['XLine1Point', 'XLine2Point', 'DimLinePoint']
@@ -164,6 +166,8 @@ class EntityDataset(Dataset):
         self.data = []
 
     def __len__(self):
+        if self.limt_number_of_records is not None:
+            return min(len(self.data), self.limt_number_of_records)
         return len(self.data)
 
     def __getitem__(self, index):
@@ -205,9 +209,10 @@ class DwgDataset:
 
             for i in range(len(sample)):
                 img, lbl = sample[i]
-
-                ima = np.transpose(img, (2, 0, 1)) # x, y, channels -> channels, x, y
-                ima = torch.from_numpy(ima) / 255
+                ima = img / 255
+                ima = np.transpose(ima, (2, 0, 1)) # x, y, channels -> channels, x, y
+                ima = torch.from_numpy(ima)
+                #ima = ima.unsqueeze(0)
 
                 imgs[i] = ima
                 num_labels = lbl.shape[0]
@@ -280,24 +285,24 @@ class DwgKeyPointsModel(nn.Module):
         #self.batchnorm3 = nn.BatchNorm2d(s*8)
 
         self.fc1 = nn.Linear(s*8, self.max_coords) # x, y for each point
-        self.pool = nn.AvgPool2d(2, 2)
+        self.pool = nn.MaxPool2d(3, 3)
 
         self.dropout = nn.Dropout2d(p=0.2)
     
     def forward(self, x):
-        x = F.relu(self.conv1(x))
+        x = F.leaky_relu(self.conv1(x))
         x = self.pool(x)
         #x = self.batchnorm1(x)
-        x = F.relu(self.conv2(x))
+        x = F.leaky_relu(self.conv2(x))
         x = self.pool(x)
 
         #x = self.batchnorm2(x)
-        x = F.relu(self.conv3(x))
+        x = F.leaky_relu(self.conv3(x))
         x = self.pool(x)
         # x = self.batchnorm3(x)
 
         bs, _, _, _ = x.shape
-        x = F.adaptive_avg_pool2d(x, 1)
+        x = F.adaptive_max_pool2d(x, 1)
         x = x.reshape(bs, -1)
         x = self.dropout(x)
 
@@ -533,6 +538,9 @@ def run(
         entities.from_json_ids_pickle_labels_img_folder(ids_file=data_file_path, image_folder=image_folder)
     elif data_file_path.endswith('.cache'):
         entities.from_cache(cache_file=data_file_path)
+    
+    # debug:
+    # entities.limt_number_of_records = 50
 
     dwg_dataset = DwgDataset(entities=entities, batch_size=batch_size)
     #dwg_dataset.entities.save_cache('data/ids128.cache')
@@ -550,7 +558,7 @@ def run(
     #scheduler = StepLR(optimizer, step_size=10, gamma=0.99)
 
     #criterion = nn.MSELoss()
-    criterion = nn.SmoothL1Loss()
+    #criterion = nn.SmoothL1Loss()
     criterion = non_zero_loss(config.device)
 
     best_recall = 0.0
@@ -620,11 +628,11 @@ def parse_opt():
     parser.add_argument('--data', type=str, default='data/ids128.cache', help='Path to ids.json or dataset.cache of dataset')
     parser.add_argument('--image-folder', type=str, default='data/images', help='Path to source images')
 
-    parser.add_argument('--epochs', type=int, default=400)
+    parser.add_argument('--epochs', type=int, default=40)
     parser.add_argument('--batch-size', type=int, default=256, help='Size of batch. Keep as max as GPU mem allows')
     parser.add_argument('--lr', type=float, default=0.001, help='Starting learning rate')
 
-    parser.add_argument('--checkpoint-interval', type=int, default=50, help='Save checkpoint every n epoch')
+    parser.add_argument('--checkpoint-interval', type=int, default=10, help='Save checkpoint every n epoch')
 
     opt = parser.parse_args()
     return vars(opt) # https://stackoverflow.com/questions/16878315/what-is-the-right-way-to-treat-python-argparse-namespace-as-a-dictionary

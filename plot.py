@@ -38,7 +38,7 @@ def plot_loader_predictions(loader, model, epoch=0, plot_folder=None):
     return figs
     
 
-def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_save_file=None):
+def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_save_file=None, max_grid_size=2):
     '''
     input images torch.tensor(n_batches, channels, img_size, img_size)
     true_keypoints torch.tensor(n_batches, max_points * (classes + n_coords)
@@ -49,7 +49,7 @@ def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_sa
     '''
     batch_size = input_images.shape[0]
     grid_size = int(math.sqrt(batch_size))
-    grid_size = min(3, grid_size)
+    grid_size = min(max_grid_size, grid_size)
 
     fig = plt.figure(figsize=(7, 7))
 
@@ -58,7 +58,7 @@ def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_sa
         if i + 1 > grid_size * grid_size:
             break
         input_image = img.detach().cpu().numpy()
-        input_image = np.transpose(input_image, (1,2,0)) #channels,x,y -> x,y,channels
+        input_image = np.transpose(input_image, (1, 2, 0)) #channels,x,y -> x,y,channels
         img_size = input_image.shape[0]
 
         plt.subplot(grid_size, grid_size, i + 1)
@@ -67,7 +67,7 @@ def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_sa
         plt.imshow(input_image)
 
         if true_keypoints is not None:
-            tkp = true_keypoints[i,:,2:4].detach().cpu().numpy()
+            tkp = true_keypoints[i,:, 2:4].detach().cpu().numpy()
             if (tkp.shape[1] != 0): # Handle plot of empty ground_truth
                 tkp = tkp * img_size
                 for p in range(tkp.shape[0]):
