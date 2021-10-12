@@ -175,7 +175,7 @@ class EntityDataset(Dataset):
         return img, lbl
 
 class DwgDataset:
-    def __init__(self, 
+    def __init__(self,
                     entities,
                     batch_size=32):
 
@@ -263,7 +263,6 @@ class DwgKeyPointsResNet50(nn.Module):
         # x = self.l0(x)
         # x = self.do(x)
         return x
-
 #------------------------------
 class DwgKeyPointsModel(nn.Module):
     def __init__(self, max_points=100, num_coordinates=2, num_channels=3):
@@ -312,31 +311,6 @@ class DwgKeyPointsModel(nn.Module):
         x = self.fc1(x)
 
         return x
-
-class DwgKeyPointsHrNet(nn.Module):
-    def __init__(self, max_points=100, num_coordinates=2, num_channels=3):
-        '''
-        Regresses input images to
-        flattened max_points*num_coordinates predictions of keypoints
-        '''
-        super(DwgKeyPointsHrNet, self).__init__()
-        self.max_points = max_points
-        self.num_coordinates = num_coordinates
-        self.max_coords = self.max_points * self.num_coordinates
-        self.num_channels = num_channels
-        
-        from hrnet import HRNet
-        self.model = HRNet(nof_joints=self.max_points)
-        #self.l0 = nn.Linear(100, self.max_coords)
-    
-    def forward(self, x):
-        bs = x.shape[0]
-        x = self.model(x)
-        x = F.adaptive_max_pool2d(x, (2,1))
-        x = x.reshape(bs, -1)
-
-        return x
-
 #------------------------------
 
 def save_checkpoint(model, optimizer, loss, checkpoint_path, precision=0, recall=0, f1=0):
