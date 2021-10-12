@@ -236,12 +236,15 @@ class DwgKeyPointsResNet50(nn.Module):
 
         self.model = models.resnet50(pretrained=pretrained)
         self.model.fc = nn.Linear(2048, self.max_coords * 4)
+
         if requires_grad == True:
             for param in self.model.parameters():
                 param.requires_grad = True
         elif requires_grad == False:
             for param in self.model.parameters():
                 param.requires_grad = False
+        for param in self.model.fc.parameters():
+            param.requires_grad = True
 
         self.bn = nn.BatchNorm1d(1000)
         self.do = nn.Dropout()
@@ -253,7 +256,7 @@ class DwgKeyPointsResNet50(nn.Module):
         batch, _, _, _ = x.shape
         x = self.model(x)
         x = x.reshape(batch, self.max_points, -1)
-        x = F.adaptive_avg_pool2d(x, (self.max_points, 2))
+        x = F.adaptive_max_pool2d(x, (self.max_points, 2))
         x = x.reshape(batch, -1)
         
         # x = self.bn(x)
@@ -548,8 +551,8 @@ def run(
     val_loader   = dwg_dataset.val_loader
 
     # create model
-    model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
-    #model = DwgKeyPointsResNet50(requires_grad=True, pretrained=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
+    #model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
+    model = DwgKeyPointsResNet50(requires_grad=False, pretrained=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
     model.to(config.device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -597,7 +600,7 @@ def run(
             # Display generated figure in tensorboard
             figs = plot_loader_predictions(loader=val_loader, model=model, epoch=epoch, plot_folder=tb_log_path)
             for i, fig in enumerate(figs):
-                tb.add_figure(f'checkpoint_{epoch}_{i}', fig, epoch)
+                tb.add_figure(tag=f'checkpoint_{epoch}', figure=fig, global_step=epoch, close=True)
 
             plt.close()
 
@@ -628,11 +631,11 @@ def parse_opt():
     parser.add_argument('--data', type=str, default='data/ids128.cache', help='Path to ids.json or dataset.cache of dataset')
     parser.add_argument('--image-folder', type=str, default='data/images', help='Path to source images')
 
-    parser.add_argument('--epochs', type=int, default=40)
-    parser.add_argument('--batch-size', type=int, default=256, help='Size of batch. Keep as max as GPU mem allows')
-    parser.add_argument('--lr', type=float, default=0.001, help='Starting learning rate')
+    parser.add_argument('--epochs', type=int, default=1000)
+    parser.add_argument('--batch-size', type=int, default=400, help='Size of batch. Keep as max as GPU mem allows')
+    parser.add_argument('--lr', type=float, default=0.0025, help='Starting learning rate')
 
-    parser.add_argument('--checkpoint-interval', type=int, default=10, help='Save checkpoint every n epoch')
+    parser.add_argument('--checkpoint-interval', type=int, default=50, help='Save checkpoint every n epoch')
 
     opt = parser.parse_args()
     return vars(opt) # https://stackoverflow.com/questions/16878315/what-is-the-right-way-to-treat-python-argparse-namespace-as-a-dictionary
