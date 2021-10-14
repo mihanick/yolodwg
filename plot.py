@@ -72,9 +72,11 @@ def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_sa
                 tkp[:, 1] = img_size - tkp[:, 1] # flip y
 
                 for p in range(tkp.shape[0]):
-                    plt.plot(tkp[p, 0], tkp[p, 1], 'g.')
-                    if plot_labels:
-                        plt.text(tkp[p, 0], tkp[p, 1], f'{true_keypoints[i, p, 5]}') # plt pnt class
+                    true_pnt_cls = true_keypoints[i, p, 5]
+                    if true_pnt_cls > 0:
+                        plt.plot(tkp[p, 0], tkp[p, 1], 'g.')
+                        if plot_labels:
+                            plt.text(tkp[p, 0], tkp[p, 1], f'{true_pnt_cls}') # plt pnt class
 
         if predictions is not None:
             predicted_keypoints = predictions[i].detach().cpu().numpy()

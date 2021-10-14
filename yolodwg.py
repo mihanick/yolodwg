@@ -329,7 +329,7 @@ def save_checkpoint(model, optimizer, checkpoint_path, precision=0, recall=0, f1
     }, checkpoint_path)
 
 def get_gpu_mem_usage():
-    return torch.cuda.memory_reserved() / 2**30 if torch.cuda.is_available() else 0 #gb
+    return torch.cuda.memory_reserved() / 2**30 if torch.cuda.is_available() else 0 #In Gb
 def get_ram_mem_usage():
     # https://stackoverflow.com/questions/276052/how-to-get-current-cpu-and-ram-usage-in-python
     #print(psutil.cpu_percent())
