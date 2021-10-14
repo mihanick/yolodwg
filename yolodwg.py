@@ -1,7 +1,7 @@
 import os
 from tqdm import tqdm
 import time
-import psutil
+
 import json
 from pathlib import Path
 import argparse
@@ -22,6 +22,8 @@ from torch.utils.data import Dataset, SequentialSampler, SubsetRandomSampler
 
 
 from plot import plot_batch_grid, plot_loader_predictions
+
+from config import get_ram_mem_usage, get_gpu_mem_usage
 import config
 #------------------------------
 
@@ -284,7 +286,7 @@ class DwgKeyPointsModel(nn.Module):
         self.conv2 = nn.Conv2d(s*2, s*4, kernel_size=3)
         self.conv3 = nn.Conv2d(s*4, s*8, kernel_size=3)
 
-        self.pool = nn.AvgPool2d(2, 2)
+        self.pool = nn.MaxPool2d(2, 2)
 
         self.dropout = nn.Dropout2d(p=0.5)
 
@@ -301,9 +303,9 @@ class DwgKeyPointsModel(nn.Module):
         x = self.pool(x)
 
         bs, _, _, _ = x.shape
-        x = F.adaptive_avg_pool2d(x, 1)
+        x = F.adaptive_max_pool2d(x, 1)
         x = x.view(bs, -1)
-        x = self.dropout(x)
+        #x = self.dropout(x)
 
         x = self.fc1(x)
         x = x.view(bs, self.max_points, -1)
@@ -331,19 +333,11 @@ def save_checkpoint(model, optimizer, checkpoint_path, precision=0, recall=0, f1
         'f1':f1
     }, checkpoint_path)
 
-def get_gpu_mem_usage():
-    return torch.cuda.memory_reserved() / 2**30 if torch.cuda.is_available() else 0 #In Gb
-def get_ram_mem_usage():
-    # https://stackoverflow.com/questions/276052/how-to-get-current-cpu-and-ram-usage-in-python
-    #print(psutil.cpu_percent())
-    #print(psutil.virtual_memory())  # physical memory usage
-    return psutil.virtual_memory()[2]
-
 class non_zero_loss(nn.Module):
     def __init__(self, device):
         super().__init__()
         self.device = device
-        self.coordinate_loss_f = nn.MSELoss()
+        self.coordinate_loss_f = nn.SmoothL1Loss()
         self.cls_loss_f = nn.CrossEntropyLoss()
 
     def forward(self, outs, ground_truth):
@@ -640,7 +634,7 @@ def parse_opt():
 
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--batch-size', type=int, default=16, help='Size of batch. Keep as max as GPU mem allows')
-    parser.add_argument('--lr', type=float, default=0.001, help='Starting learning rate')
+    parser.add_argument('--lr', type=float, default=0.0001, help='Starting learning rate')
 
     parser.add_argument('--checkpoint-interval', type=int, default=20, help='Save checkpoint every n epoch')
 
