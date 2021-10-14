@@ -286,10 +286,10 @@ if __name__ == "__main__":
     save_json_ids_pickle_labels(
         mongo_db_connection_string='mongodb://192.168.1.49:27017',
         img_size=img_size,
-        limit_records=600,
-        max_entities=100,
-        max_labels=15,
-        skip_empty_annotations=False,
+        limit_records=1200,
+        max_entities=300,
+        max_labels=10,
+        skip_empty_annotations=True,
         labels_pandas_file=labels,
         ids_file=ids)
     cache_dataset(ids, cache)

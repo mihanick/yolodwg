@@ -33,14 +33,6 @@ def predict(img_path, weights='best.weights'):
         out = out.reshape(-1, 2)
         prediction = out.detach().cpu().numpy()
         # prediction = prediction.reshape(-1, 2)
-
-        graphic = plot_image_prediction_truth(
-                                    input_image=img,
-                                    predicted_keypoints=prediction, 
-                                    true_keypoints=None)
-
-        graphic.savefig('predicted.png')
-
         return prediction
 
 if __name__ == "__main__":
