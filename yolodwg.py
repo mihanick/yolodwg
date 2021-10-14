@@ -288,7 +288,7 @@ class DwgKeyPointsModel(nn.Module):
 
         self.pool = nn.MaxPool2d(2, 2)
 
-        self.dropout = nn.Dropout2d(p=0.5)
+        self.dropout = nn.Dropout2d(p=0.2)
 
         self.fc1 = nn.Linear(s*8, self.output_size)
     
@@ -303,9 +303,9 @@ class DwgKeyPointsModel(nn.Module):
         x = self.pool(x)
 
         bs, _, _, _ = x.shape
-        x = F.adaptive_max_pool2d(x, 1)
+        x = F.adaptive_avg_pool2d(x, 1)
         x = x.view(bs, -1)
-        #x = self.dropout(x)
+        x = self.dropout(x)
 
         x = self.fc1(x)
         x = x.view(bs, self.max_points, -1)
@@ -332,13 +332,15 @@ def save_checkpoint(model, optimizer, checkpoint_path, precision=0, recall=0, f1
         'recall': recall,
         'f1':f1
     }, checkpoint_path)
-from chamfer_loss import MyChamferDistance
+
+from chamfer_loss import my_chamfer_distance
 class non_zero_loss(nn.Module):
-    def __init__(self, device, coordinate_loss_multiplier=1):
+    def __init__(self, device, coordinate_loss_multiplier=1, class_loss_multiplier=1):
         super().__init__()
         self.device = device
         self.coordinate_loss_multiplier = coordinate_loss_multiplier
-        self.coordinate_loss_f = MyChamferDistance()
+        self.class_loss_multiplier = class_loss_multiplier
+        self.coordinate_loss_f = nn.L1Loss()
         self.cls_loss_f = nn.CrossEntropyLoss()
 
     def forward(self, outs, ground_truth):
@@ -353,7 +355,7 @@ class non_zero_loss(nn.Module):
 
             classification_loss += self.cls_loss_f(predicted_classes_map, gt_pnt_class)
 
-        return self.coordinate_loss_multiplier * coordinate_loss + classification_loss
+        return self.coordinate_loss_multiplier * coordinate_loss + self.class_loss_multiplier * classification_loss
 
 def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epoch=0, epochs=0, plot_prediction=False, plot_folder='runs'):
     '''
@@ -365,12 +367,11 @@ def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epo
 
     running_loss = 0.0
     counter = 0
+    ch_l = 0
 
     progress_bar = tqdm(enumerate(loader), total=len(loader))
     for batch_i, (imgs, targets) in progress_bar:
         counter += 1
-
-        progress_bar.set_description(f'[{epoch} / {epochs}]Train. GPU:{get_gpu_mem_usage():.1f}G RAM:{get_ram_mem_usage():.0f}% Running loss: {running_loss / counter:.4f}')
 
         imgs = imgs.to(device)
         targets = targets.to(device)
@@ -382,7 +383,7 @@ def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epo
         out = model(imgs)
 
         loss = criterion(out, targets)
-        #loss = criterion(out, targets[:, :, 2:4].reshape(batch_size, -1))
+        ch_l = my_chamfer_distance(out[:, :, :2],targets[:, :, 2:4])
 
         running_loss += loss.item()
         loss.backward()
@@ -390,6 +391,8 @@ def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epo
         optimizer.step()
         if scheduler is not None:
             scheduler.step()
+
+        progress_bar.set_description(f'[{epoch} / {epochs}]Train. GPU:{get_gpu_mem_usage():.1f}G RAM:{get_ram_mem_usage():.0f}% Running loss: {running_loss / counter:.4f} ch:{ch_l / counter:.4f}')
 
         #debug plot
         if plot_prediction and plot_folder is not None:
@@ -562,14 +565,14 @@ def run(
     #model = DwgKeyPointsResNet50(requires_grad=True, pretrained=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
     model.to(config.device)
 
-    #optimizer = torch.optim.Adam(model.parameters(), lr=lr)
-    optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.99)
+    optimizer = torch.optim.Adam(model.parameters(), lr=lr)
+    #optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.99)
     scheduler = None 
     #scheduler = StepLR(optimizer, step_size=10, gamma=0.9)
 
     #criterion = nn.MSELoss()
     #criterion = nn.SmoothL1Loss()
-    criterion = non_zero_loss(config.device, coordinate_loss_multiplier=1)
+    criterion = non_zero_loss(config.device, coordinate_loss_multiplier=36, class_loss_multiplier=0)
 
     best_recall = 0.0
     best_precision = 0.0
@@ -591,7 +594,7 @@ def run(
 
         val_loss, precision, recall, f1 = 0, 0, 0, 0
         if validate:
-        val_loss, precision, recall, f1 = val_epoch(
+            val_loss, precision, recall, f1 = val_epoch(
                                 model=model,
                                 loader=val_loader,
                                 device=config.device,
@@ -639,10 +642,10 @@ def parse_opt():
     parser.add_argument('--image-folder', type=str, default='data/images', help='Path to source images')
 
     parser.add_argument('--epochs', type=int, default=100)
-    parser.add_argument('--batch-size', type=int, default=16, help='Size of batch. Keep as max as GPU mem allows')
-    parser.add_argument('--lr', type=float, default=0.001, help='Starting learning rate')
+    parser.add_argument('--batch-size', type=int, default=4, help='Size of batch')
+    parser.add_argument('--lr', type=float, default=0.01, help='Starting learning rate')
 
-    parser.add_argument('--checkpoint-interval', type=int, default=20, help='Save checkpoint every n epoch')
+    parser.add_argument('--checkpoint-interval', type=int, default=100, help='Save checkpoint every n epoch')
 
     opt = parser.parse_args()
     return vars(opt) # https://stackoverflow.com/questions/16878315/what-is-the-right-way-to-treat-python-argparse-namespace-as-a-dictionary
@@ -657,4 +660,5 @@ if __name__ == "__main__":
 
         epochs=opt['epochs'],
         checkpoint_interval=opt['checkpoint_interval'],
-        lr=opt['lr'])
+        lr=opt['lr'],
+        validate=False)
