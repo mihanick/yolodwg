@@ -430,16 +430,16 @@ def calculate_metrics_per_batch(out, ground_truth, criterion=None):
         for j, point in enumerate(points):
             target_cls = point[5]
             if target_cls != 0: # non-empty point in ground_truth
-                n_dim = point[0] # dimension identifier for this point
+                #n_dim = point[0] # dimension identifier for this point
                 pnt_x, pnt_y = point[2], point[3]
-                points_of_same_dim = points[points[:, 0] == n_dim]
-                points_of_same_dim = points_of_same_dim[points_of_same_dim[:, 2] != 0]
+                #points_of_same_dim = points[points[:, 0] == n_dim]
+                #points_of_same_dim = points_of_same_dim[points_of_same_dim[:, 2] != 0]
 
-                # bound box (min and max coordinates of all points of this dimension):
-                min_x, min_y, max_x, max_y = torch.min(points_of_same_dim[:, 2]), torch.min(points_of_same_dim[:, 3]), torch.max(points_of_same_dim[:, 2]), torch.max(points_of_same_dim[:, 3])
-                boundbox_diagonal = torch.sqrt((max_x - min_x) ** 2 + (max_y - min_y) ** 2)
-                tolerance = 0.1 * boundbox_diagonal
-                #tolerance = 0.05 in debug we can ease tolerance
+                ## bound box (min and max coordinates of all points of this dimension):
+                #min_x, min_y, max_x, max_y = torch.min(points_of_same_dim[:, 2]), torch.min(points_of_same_dim[:, 3]), torch.max(points_of_same_dim[:, 2]), torch.max(points_of_same_dim[:, 3])
+                #boundbox_diagonal = torch.sqrt((max_x - min_x) ** 2 + (max_y - min_y) ** 2)
+                #tolerance = 0.1 * boundbox_diagonal
+                tolerance = 0.05 #in debug we can ease tolerance
 
                 # find all distances from current point to predictions
                 distances_from_current_point = torch.sqrt((prediction[:, 0] - pnt_x) ** 2 + (prediction[:, 1] - pnt_y) **2)
@@ -521,7 +521,9 @@ def run(
         batch_size=4,
         epochs=20,
         checkpoint_interval=10,
-        lr=0.001
+        lr=0.001,
+
+        validate=True
     ):
 
     runs_dir = 'runs'
@@ -567,7 +569,7 @@ def run(
 
     #criterion = nn.MSELoss()
     #criterion = nn.SmoothL1Loss()
-    criterion = non_zero_loss(config.device)
+    criterion = non_zero_loss(config.device, coordinate_loss_multiplier=1)
 
     best_recall = 0.0
     best_precision = 0.0
@@ -586,6 +588,9 @@ def run(
                                 epochs=epochs,
                                 plot_prediction=False,
                                 plot_folder=tb_log_path)
+
+        val_loss, precision, recall, f1 = 0, 0, 0, 0
+        if validate:
         val_loss, precision, recall, f1 = val_epoch(
                                 model=model,
                                 loader=val_loader,
