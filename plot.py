@@ -10,7 +10,7 @@ import matplotlib.pyplot as plt
 import matplotlib
 matplotlib.style.use('ggplot')
 
-def plot_loader_predictions(loader, model, epoch=0, plot_folder=None):
+def plot_loader_predictions(loader, model, epoch=0, plot_folder=None, limit_number_of_plots=3):
     
     if plot_folder is None:
         return
@@ -22,10 +22,8 @@ def plot_loader_predictions(loader, model, epoch=0, plot_folder=None):
 
             imgs = imgs.to(config.device)
             targets = targets.to(config.device)
-            #targets = targets[:, :, -3:-1]
 
             out = model(imgs)
-            out = out.view((out.shape[0], -1, 2))
 
             fig = plot_batch_grid(
                         input_images=imgs,
@@ -33,12 +31,13 @@ def plot_loader_predictions(loader, model, epoch=0, plot_folder=None):
                         predictions=out,
                         plot_save_file=f'{plot_folder}/checkpoint_{epoch}_{i}.png')
             figs.append(fig)
-            if i > 3:
-                break
+            if limit_number_of_plots is not None:
+                if i > limit_number_of_plots:
+                    break
     return figs
     
 
-def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_save_file=None, max_grid_size=2):
+def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_save_file=None, max_grid_size=2, plot_labels=False):
     '''
     input images torch.tensor(n_batches, channels, img_size, img_size)
     true_keypoints torch.tensor(n_batches, max_points * (classes + n_coords)
@@ -67,53 +66,38 @@ def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_sa
         plt.imshow(input_image)
 
         if true_keypoints is not None:
-            tkp = true_keypoints[i,:, 2:4].detach().cpu().numpy()
+            tkp = true_keypoints[i, :, 2:4].detach().cpu().numpy()
             if (tkp.shape[1] != 0): # Handle plot of empty ground_truth
-                tkp = tkp * img_size
+                tkp = tkp * img_size # scale coordinates to img size
+                tkp[:, 1] = img_size - tkp[:, 1] # flip y
+
                 for p in range(tkp.shape[0]):
-                    plt.plot(tkp[p, 0], img_size - tkp[p, 1], 'g.')
-                    # plt.text(orig_keypoint[p, 0], orig_keypoint[p, 1], f'{p}')
+                    true_pnt_cls = true_keypoints[i, p, 5]
+                    if true_pnt_cls > 0:
+                        plt.plot(tkp[p, 0], tkp[p, 1], 'g.')
+                        if plot_labels:
+                            plt.text(tkp[p, 0], tkp[p, 1], f'{true_pnt_cls}') # plt pnt class
 
         if predictions is not None:
             predicted_keypoints = predictions[i].detach().cpu().numpy()
-            predicted_keypoints = np.reshape(predicted_keypoints, (-1, 2))
 
-            output_keypoint = predicted_keypoints * img_size
-            for p in range(output_keypoint.shape[0]):
-                plt.plot(output_keypoint[p, 0], img_size - output_keypoint[p, 1], 'r.')
-                # TODO: display dimno and pnt class here
-                # plt.text(output_keypoint[p, 0], output_keypoint[p, 1], f'{p}')
+            for p in range(predicted_keypoints.shape[0]):
+                p_coords = predicted_keypoints[p,:2]
+                p_coords *= img_size #scale coordinates to img_size
+                p_coords[1] = img_size - p_coords[1] # flip y, as pyplot starts plotting from top lef, but coords are not from bottom left
+
+                p_pnt_cls=predicted_keypoints[p, 2:]
+                p_pnt_cls = np.exp(p_pnt_cls)/sum(np.exp(p_pnt_cls)) # softmax to sum up to 1
+                predicted_class = np.argmax(p_pnt_cls)
+                confidence = p_pnt_cls[predicted_class]
+
+                if predicted_class > 0:
+                    plt.plot( p_coords[0], p_coords[1], 'r.')
+                    if plot_labels:
+                        plt.text(p_coords[0], p_coords[1], f'{predicted_class}@{confidence * 100:.0f}%')
+                
 
     if plot_save_file is not None:
         plt.savefig(plot_save_file)
     return fig
 
-def plot_image_prediction_truth(input_image, predicted_keypoints=None, true_keypoints=None):
-    '''
-    Plots the predicted keypoints and
-    actual keypoints for first image from batch
-
-    input_image single image np.array.size(image_size, image_size, num_channels=num_channels)
-    predicted_keypoints keypoint predictions for image np.array.size(max_points, 2[x,y])
-    true_keypoints torch.tensor ground truth for image np.array.size(max_points, 2[x,y])
-    y coordinates are calculated from top left corner
-    x,y are in [0..1] range
-
-    '''
-
-    img_size = input_image.shape[0]
-
-    plt.imshow(input_image)
-
-    if predicted_keypoints is not None:
-        output_keypoint = predicted_keypoints * img_size
-        for p in range(output_keypoint.shape[0]):
-            plt.plot(output_keypoint[p, 0], img_size - output_keypoint[p, 1], 'r.')
-            # TODO: display dimno and pnt class here
-            # plt.text(output_keypoint[p, 0], output_keypoint[p, 1], f'{p}')
-
-    if true_keypoints is not None:
-        orig_keypoint = true_keypoints * img_size
-        for p in range(orig_keypoint.shape[0]):
-            plt.plot(orig_keypoint[p, 0], img_size - orig_keypoint[p, 1], 'g.')
-            # plt.text(orig_keypoint[p, 0], orig_keypoint[p, 1], f'{p}')
