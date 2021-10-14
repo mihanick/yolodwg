@@ -332,12 +332,13 @@ def save_checkpoint(model, optimizer, checkpoint_path, precision=0, recall=0, f1
         'recall': recall,
         'f1':f1
     }, checkpoint_path)
-
+from chamfer_loss import MyChamferDistance
 class non_zero_loss(nn.Module):
-    def __init__(self, device):
+    def __init__(self, device, coordinate_loss_multiplier=1):
         super().__init__()
         self.device = device
-        self.coordinate_loss_f = nn.SmoothL1Loss()
+        self.coordinate_loss_multiplier = coordinate_loss_multiplier
+        self.coordinate_loss_f = MyChamferDistance()
         self.cls_loss_f = nn.CrossEntropyLoss()
 
     def forward(self, outs, ground_truth):
@@ -352,7 +353,7 @@ class non_zero_loss(nn.Module):
 
             classification_loss += self.cls_loss_f(predicted_classes_map, gt_pnt_class)
 
-        return coordinate_loss + classification_loss
+        return self.coordinate_loss_multiplier * coordinate_loss + classification_loss
 
 def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epoch=0, epochs=0, plot_prediction=False, plot_folder='runs'):
     '''
@@ -634,7 +635,7 @@ def parse_opt():
 
     parser.add_argument('--epochs', type=int, default=100)
     parser.add_argument('--batch-size', type=int, default=16, help='Size of batch. Keep as max as GPU mem allows')
-    parser.add_argument('--lr', type=float, default=0.0001, help='Starting learning rate')
+    parser.add_argument('--lr', type=float, default=0.001, help='Starting learning rate')
 
     parser.add_argument('--checkpoint-interval', type=int, default=20, help='Save checkpoint every n epoch')
 
