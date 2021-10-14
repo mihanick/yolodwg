@@ -496,7 +496,7 @@ def val_epoch(model, loader, criterion, device, epoch=0, epochs=0, plot_predicti
     with torch.no_grad():
         progress_bar = tqdm(enumerate(loader), total=len(loader))
         for batch_i, (imgs, ground_truth) in progress_bar:
-
+            ground_truth = ground_truth.to(config.device)
             imgs = imgs.to(device)
             out = model(imgs)
 
