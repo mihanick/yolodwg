@@ -332,18 +332,26 @@ def save_checkpoint(model, optimizer, checkpoint_path, precision=0, recall=0, f1
         'f1':f1
     }, checkpoint_path)
 
+#from chamfer_loss import my_chamfer_distance
 from chamfer_loss import my_chamfer_distance
+from pytorch3d.loss import chamfer_distance
 class non_zero_loss(nn.Module):
     def __init__(self, device, coordinate_loss_multiplier=1, class_loss_multiplier=1):
         super().__init__()
         self.device = device
         self.coordinate_loss_multiplier = coordinate_loss_multiplier
         self.class_loss_multiplier = class_loss_multiplier
-        self.coordinate_loss_f = nn.L1Loss()
+        self.coordinate_loss_f = chamfer_distance
         self.cls_loss_f = nn.CrossEntropyLoss()
 
     def forward(self, outs, ground_truth):
-        coordinate_loss = self.coordinate_loss_f(outs[:, :, :2], ground_truth[:, :, 2:4])
+        bs = ground_truth.shape[0]
+        predicted_classes = torch.argmax(F.softmax(outs[:, :, 2:], dim=2), dim=2).long()
+        predicted_non_zeros = outs[predicted_classes[:, :] > 0,:][:, :2]
+        true_non_zeros = ground_truth[ground_truth[:,:,5] > 0][:, 2:4]
+        coordinate_loss, _ = self.coordinate_loss_f(predicted_non_zeros.unsqueeze(0), true_non_zeros.unsqueeze(0))
+
+        #coordinate_loss, _ = self.coordinate_loss_f(outs[:, :, :2], ground_truth[:, :, 2:4])
 
         classification_loss = 0
         for b, gtb in enumerate(ground_truth):
@@ -570,7 +578,7 @@ def run(
 
     #criterion = nn.MSELoss()
     #criterion = nn.SmoothL1Loss()
-    criterion = non_zero_loss(config.device, coordinate_loss_multiplier=36, class_loss_multiplier=0)
+    criterion = non_zero_loss(config.device, coordinate_loss_multiplier=1, class_loss_multiplier=1)
 
     best_recall = 0.0
     best_precision = 0.0
