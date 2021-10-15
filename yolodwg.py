@@ -168,8 +168,8 @@ class EntityDataset(Dataset):
         self.data = []
 
     def __len__(self):
-        if self.limt_number_of_records is not None:
-            return min(len(self.data), self.limt_number_of_records)
+        if self.limit_number_of_records is not None:
+            return min(len(self.data), self.limit_number_of_records)
         return len(self.data)
 
     def __getitem__(self, index):
@@ -533,7 +533,8 @@ def run(
         checkpoint_interval=10,
         lr=0.001,
 
-        validate=True
+        validate=True,
+        limit_number_of_records=None
     ):
 
     runs_dir = 'runs'
