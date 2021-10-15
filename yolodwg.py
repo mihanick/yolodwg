@@ -145,7 +145,7 @@ class EntityDataset(Dataset):
 
         print(f'Entity dataset. Images: {len(self.data)} Max points:{self.max_labels}.')
 
-    def __init__(self):
+    def __init__(self, limit_number_of_records):
         '''
 
         '''
@@ -154,7 +154,7 @@ class EntityDataset(Dataset):
         self.img_size = None
         self.num_image_channels = 3
 
-        self.limt_number_of_records = None
+        self.limit_number_of_records = limit_number_of_records
 
         self.classes = ['AlignedDimension']
         self.pnt_classes = ['XLine1Point', 'XLine2Point', 'DimLinePoint']
@@ -546,14 +546,12 @@ def run(
     tb = SummaryWriter(tb_log_path)
 
     # create dataset from images or from cache
-    entities = EntityDataset()
+    # debug: take only small number of records from dataset
+    entities = EntityDataset(limit_number_of_records=limit_number_of_records)
     if data_file_path.endswith('.json'):
         entities.from_json_ids_pickle_labels_img_folder(ids_file=data_file_path, image_folder=image_folder)
     elif data_file_path.endswith('.cache'):
         entities.from_cache(cache_file=data_file_path)
-    
-    # debug:
-    entities.limt_number_of_records = 50
 
     dwg_dataset = DwgDataset(entities=entities, batch_size=batch_size)
     #dwg_dataset.entities.save_cache('data/ids128.cache')
@@ -638,14 +636,15 @@ def run(
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default='data/ids128.cache', help='Path to ids.json or dataset.cache of dataset')
+    parser.add_argument('--data', type=str, default='data/ids128.json', help='Path to ids.json or dataset.cache of dataset')
     parser.add_argument('--image-folder', type=str, default='data/images', help='Path to source images')
+    parser.add_argument('--limit-number-of-records', type=int, default=None, help='Take only this maximum records from dataset')
 
-    parser.add_argument('--epochs', type=int, default=100)
-    parser.add_argument('--batch-size', type=int, default=4, help='Size of batch')
-    parser.add_argument('--lr', type=float, default=0.01, help='Starting learning rate')
+    parser.add_argument('--epochs', type=int, default=1000)
+    parser.add_argument('--batch-size', type=int, default=256, help='Size of batch')
+    parser.add_argument('--lr', type=float, default=0.001, help='Starting learning rate')
 
-    parser.add_argument('--checkpoint-interval', type=int, default=100, help='Save checkpoint every n epoch')
+    parser.add_argument('--checkpoint-interval', type=int, default=50, help='Save checkpoint every n epoch')
 
     opt = parser.parse_args()
     return vars(opt) # https://stackoverflow.com/questions/16878315/what-is-the-right-way-to-treat-python-argparse-namespace-as-a-dictionary
@@ -661,4 +660,4 @@ if __name__ == "__main__":
         epochs=opt['epochs'],
         checkpoint_interval=opt['checkpoint_interval'],
         lr=opt['lr'],
-        validate=False)
+        limit_number_of_records=opt['limit_number_of_records'])
