@@ -82,7 +82,7 @@ class EntityDataset(Dataset):
         except Exception as e:
             print(f'Could not load cache: {e}')
 
-        print(f'Entity dataset. Images: {len(self.data)} Max points:{self.max_labels}.')
+        print(f'Entity dataset. Images: {len(self.data)} Max points:{self.max_labels}. Records limit:{self.limit_number_of_records}')
 
     def save_cache(self, save_path):
         # save creaed data as cache
@@ -334,34 +334,98 @@ def save_checkpoint(model, optimizer, checkpoint_path, precision=0, recall=0, f1
 
 #from chamfer_loss import my_chamfer_distance
 from chamfer_loss import my_chamfer_distance
-from pytorch3d.loss import chamfer_distance
+
+def predicted_classes_from_outputs(outs):
+    '''
+    returns predicted torch.long(batch_size, max_points) classes from nn output
+    outs - nn output torch.tensor(batch_size, max_points, features)
+        features[:2] - x,y coordinates
+        features[2:] - nn outputs for each pnt class
+    '''
+    # We softmax features[2:] to summ up to 1, than this will be our predictions of classes with 
+    # probabilities
+
+    # than we take max probability and count it as a predicted class
+    # .long to use it as index
+    return torch.argmax(F.softmax(outs[:, :, 2:], dim=2), dim=2).long()
+
 class non_zero_loss(nn.Module):
-    def __init__(self, device, coordinate_loss_multiplier=1, class_loss_multiplier=1):
+    def __init__(self, coordinate_loss_name='chamfer_distance', coordinate_loss_multiplier=1, class_loss_multiplier=1):
+        '''
+        Batch loss calculation only for non-zero predictions.
+        coordinate_loss_name could be ordinary pytorch "MSELoss" "L1Loss", "SmoothL1Loss"
+        or "chamfer_distance" from pytorch3d.
+
+        MSE and others compares tensors with fixed size of max_points
+        chamfer_distance compares variable sets of 2d points
+        (only non-zero-class predicted and true points are taken)
+
+        class loss is CrossEntropyLoss
+        multipliers are used to equalize values of coordinate and class losses, as
+        their value might be too different for optimizer to take into account
+        one or another.
+        '''
         super().__init__()
-        self.device = device
+
+        self.coordinate_loss_name = coordinate_loss_name
+
+        if coordinate_loss_name == "chamfer_distance":
+            try:
+                # This won't work on cpu
+                from pytorch3d.loss import chamfer_distance 
+                self.coordinate_loss_name = "chamfer_distance"
+            except:
+                # Fallback chamfer distance to MSE on cpu
+                print('[WARNING] Pytorch3d is for chamfer_distance is not available. Fallback ot MSELoss')
+                self.coordinate_loss_name = "MSELoss"
+                self.coordinate_loss_f = nn.MSELoss()
+        elif coordinate_loss_name == "MSELoss":
+            self.coordinate_loss_f = nn.MSELoss()
+        elif coordinate_loss_name == "L1Loss":
+            self.coordinate_loss_f = nn.L1Loss()
+        elif coordinate_loss_name == "SmoothL1Loss":
+            self.coordinate_loss_f = nn.SmoothL1Loss()
+            
+
         self.coordinate_loss_multiplier = coordinate_loss_multiplier
         self.class_loss_multiplier = class_loss_multiplier
-        self.coordinate_loss_f = chamfer_distance
         self.cls_loss_f = nn.CrossEntropyLoss()
 
     def forward(self, outs, ground_truth):
-        bs = ground_truth.shape[0]
-        predicted_classes = torch.argmax(F.softmax(outs[:, :, 2:], dim=2), dim=2).long()
-        predicted_non_zeros = outs[predicted_classes[:, :] > 0,:][:, :2]
-        true_non_zeros = ground_truth[ground_truth[:,:,5] > 0][:, 2:4]
-        coordinate_loss, _ = self.coordinate_loss_f(predicted_non_zeros.unsqueeze(0), true_non_zeros.unsqueeze(0))
 
-        #coordinate_loss, _ = self.coordinate_loss_f(outs[:, :, :2], ground_truth[:, :, 2:4])
+        # Coordinate loss calculation:
+        if self.coordinate_loss_name == "chamfer_loss":
+            predicted_classes = predicted_classes_from_outputs(outs)
 
+            # This magic here basically says: get only prediction with non-zero class.
+            # than we take only coordinates of it
+            # strangely outs[predicted_classes] returns squished tensor
+            # so we'll just unsqueeze it here, as for this purposes
+            # batch dimension doesn't matter
+            predicted_non_zeros = outs[predicted_classes[:, :] > 0,:][:, :2]
+
+            # This magic says only take non-zero points [5th coord is label_class]
+            # and only take their coordinates
+            true_non_zeros = ground_truth[ground_truth[:, :, 5] > 0][:, 2:4]
+
+            coordinate_loss, _ = self.coordinate_loss_f(predicted_non_zeros.unsqueeze(0), true_non_zeros.unsqueeze(0))
+        else:
+            coordinate_loss = self.coordinate_loss_f(outs[:, :, :2], ground_truth[:, :, 2:4])
+
+        # Classification loss calculation:
         classification_loss = 0
         for b, gtb in enumerate(ground_truth):
-            # https://stackoverflow.com/questions/57065070/pytorch-dimension-out-of-range-expected-to-be-in-range-of-1-0-but-got-1
+            
+            # Take only outs[:, :, 2:] - these are per-class nn outputs
             predicted_classes_map = outs[b, :, 2:]
 
+            # https://stackoverflow.com/questions/57065070/pytorch-dimension-out-of-range-expected-to-be-in-range-of-1-0-but-got-1
+            # Importante here that we take pnt class number as input for CrossEntropyLoss
             gt_pnt_class = gtb[:, 1].long()
 
             classification_loss += self.cls_loss_f(predicted_classes_map, gt_pnt_class)
-
+        
+        # Total loss value:
         return self.coordinate_loss_multiplier * coordinate_loss + self.class_loss_multiplier * classification_loss
 
 def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epoch=0, epochs=0, plot_prediction=False, plot_folder='runs'):
@@ -577,9 +641,7 @@ def run(
     scheduler = None 
     #scheduler = StepLR(optimizer, step_size=10, gamma=0.9)
 
-    #criterion = nn.MSELoss()
-    #criterion = nn.SmoothL1Loss()
-    criterion = non_zero_loss(config.device, coordinate_loss_multiplier=1, class_loss_multiplier=1)
+    criterion = non_zero_loss(coordinate_loss_name="chamfer_distance", coordinate_loss_multiplier=1, class_loss_multiplier=1)
 
     best_recall = 0.0
     best_precision = 0.0
@@ -645,12 +707,12 @@ def run(
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default='data/ids128.json', help='Path to ids.json or dataset.cache of dataset')
+    parser.add_argument('--data', type=str, default='data/ids128.cache', help='Path to ids.json or dataset.cache of dataset')
     parser.add_argument('--image-folder', type=str, default='data/images', help='Path to source images')
     parser.add_argument('--limit-number-of-records', type=int, default=None, help='Take only this maximum records from dataset')
 
     parser.add_argument('--epochs', type=int, default=1000)
-    parser.add_argument('--batch-size', type=int, default=256, help='Size of batch')
+    parser.add_argument('--batch-size', type=int, default=16, help='Size of batch')
     parser.add_argument('--lr', type=float, default=0.001, help='Starting learning rate')
 
     parser.add_argument('--checkpoint-interval', type=int, default=50, help='Save checkpoint every n epoch')
