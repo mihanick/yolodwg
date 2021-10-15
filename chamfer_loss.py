@@ -1,5 +1,5 @@
 '''
-Contains functions and modules to calculate chamfer and MeanSquareError
+Contains functions and modules to calculate chamfer distance using numpy
 '''
 import numpy as np
 import numpy.linalg as LA
@@ -39,7 +39,6 @@ def chamfer_distance_numpy(array1, array2):
         dist = dist + (av_dist1+av_dist2)/batch_size
     return dist
 
-
 def chamfer_distance_sklearn(array1, array2):
     batch_size, num_point = array1.shape[:2]
     dist = 0
@@ -73,5 +72,6 @@ def my_chamfer_distance(prediction, truth):
     return loss
 
 class MyChamferDistance(nn.Module):
+    # TODO: maybe implement without pytorch3d
     def forward(self, x, target):
         return my_chamfer_distance(x, target)
