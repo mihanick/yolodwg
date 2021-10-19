@@ -8,7 +8,7 @@
             "name": "Run pipeline",
             "type": "python",
             "request": "launch",
-            "program": "yolodwg.py",
+            "program": "test.py",
             "console": "integratedTerminal"
         },
     ]
