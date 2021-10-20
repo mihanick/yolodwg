@@ -114,7 +114,7 @@ def test_yolo_model():
     from models.DwgKeyPointsYolov4 import DwgKeyPointsYolov4
     import config
 
-    model = DwgKeyPointsYolov4(max_points=30)
+    model = DwgKeyPointsYolov4(max_points=30).to(config.device)
     model.train()
 
     res = None
@@ -122,8 +122,6 @@ def test_yolo_model():
     for i in range(100):
         imgs = torch.rand([8, 3, 128, 128]).to(config.device)
         out = model(imgs)
-        #output shape [batch * 1008 * 4(xyhw), batch*1008*n_classes]
-        bboxes = post_processing(img=None, conf_thresh=0.1,nms_thresh=0.5, output=out)
 
         if res is None:
             res = out

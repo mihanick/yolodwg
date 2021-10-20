@@ -19,7 +19,7 @@ from dataset import DwgDataset, EntityDataset
 
 from models.DwgKeyPointsModel import DwgKeyPointsModel
 from models.DwgKeyPointsResNet50 import DwgKeyPointsResNet50
-from models.DwgKeyPointsYolov4 import Yolov4
+from models.DwgKeyPointsYolov4 import DwgKeyPointsYolov4
 
 from plot import plot_batch_grid, plot_loader_predictions
 
@@ -86,6 +86,7 @@ class non_zero_loss(nn.Module):
                 # This won't work on cpu
                 from pytorch3d.loss import chamfer_distance 
                 self.coordinate_loss_name = "chamfer_distance"
+                self.coordinate_loss_f = chamfer_distance
             except:
                 # Fallback chamfer distance to MSE on cpu
                 print('[WARNING] Pytorch3d is for chamfer_distance is not available. Fallback ot MSELoss')
@@ -106,7 +107,7 @@ class non_zero_loss(nn.Module):
     def forward(self, outs, ground_truth):
 
         # Coordinate loss calculation:
-        if self.coordinate_loss_name == "chamfer_loss":
+        if self.coordinate_loss_name == "chamfer_distance":
             predicted_classes = predicted_classes_from_outputs(outs)
 
             # This magic here basically says: get only prediction with non-zero class.
@@ -138,7 +139,9 @@ class non_zero_loss(nn.Module):
             classification_loss += self.cls_loss_f(predicted_classes_map, gt_pnt_class)
         
         # Total loss value:
-        return self.coordinate_loss_multiplier * coordinate_loss + self.class_loss_multiplier * classification_loss
+        total_loss = self.coordinate_loss_multiplier * coordinate_loss + self.class_loss_multiplier * classification_loss
+
+        return total_loss, coordinate_loss, classification_loss
 
 def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epoch=0, epochs=0, plot_prediction=False, plot_folder='runs'):
     '''
@@ -165,7 +168,7 @@ def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epo
 
         out = model(imgs)
 
-        loss = criterion(out, targets)
+        loss, coord_l, cls_l = criterion(out, targets)
         ch_l = my_chamfer_distance(out[:, :, :2],targets[:, :, 2:4])
 
         running_loss += loss.item()
@@ -175,7 +178,7 @@ def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epo
         if scheduler is not None:
             scheduler.step()
 
-        progress_bar.set_description(f'[{epoch} / {epochs}]Train. GPU:{get_gpu_mem_usage():.1f}G RAM:{get_ram_mem_usage():.0f}% Running loss: {running_loss / counter:.4f} ch:{ch_l / counter:.4f}')
+        progress_bar.set_description(f'[{epoch} / {epochs}]Train. GPU:{get_gpu_mem_usage():.1f}G RAM:{get_ram_mem_usage():.0f}% Running loss: {running_loss / counter:.4f} coord:{coord_l:.4f} cls:{cls_l:.4f} chd:{ch_l:.4f}')
 
         #debug plot
         if plot_prediction and plot_folder is not None:
@@ -191,7 +194,7 @@ def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epo
 def calculate_metrics_per_batch(out, ground_truth, criterion=None):
 
     if criterion is not None:
-        loss = criterion(out, ground_truth)
+        loss, _, _ = criterion(out, ground_truth)
 
     tp = 0
     fp = 0
@@ -343,9 +346,9 @@ def run(
     val_loader   = dwg_dataset.val_loader
 
     # create model
-    #model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_pnt_classes=dwg_dataset.entities.num_pnt_classes, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
-    model = DwgKeyPointsResNet50(pretrained=True, requires_grad=True, max_points=dwg_dataset.entities.max_labels, num_pnt_classes=dwg_dataset.entities.num_pnt_classes, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
-    #model = DwgKeyPointsResNet50(requires_grad=True, pretrained=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_channels=dwg_dataset.entities.num_image_channels)
+    model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_pnt_classes=dwg_dataset.entities.num_pnt_classes, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
+    #model = DwgKeyPointsResNet50(pretrained=True, requires_grad=True, max_points=dwg_dataset.entities.max_labels, num_pnt_classes=dwg_dataset.entities.num_pnt_classes, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
+    #model = DwgKeyPointsYolov4(requires_grad=True, pretrained=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
     model.to(config.device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -353,7 +356,8 @@ def run(
     scheduler = None 
     #scheduler = StepLR(optimizer, step_size=10, gamma=0.9)
 
-    criterion = non_zero_loss(coordinate_loss_name="chamfer_distance", coordinate_loss_multiplier=1, class_loss_multiplier=1)
+    #criterion = non_zero_loss(coordinate_loss_name="MSELoss", coordinate_loss_multiplier=100, class_loss_multiplier=0.001)
+    criterion = non_zero_loss(coordinate_loss_name="chamfer_distance", coordinate_loss_multiplier=1, class_loss_multiplier=0.001)
 
     best_recall = 0.0
     best_precision = 0.0
@@ -393,7 +397,7 @@ def run(
             # Display generated figure in tensorboard
             figs = plot_loader_predictions(loader=val_loader, model=model, epoch=epoch, plot_folder=tb_log_path)
             for i, fig in enumerate(figs):
-                tb.add_figure(tag=f'checkpoint_{epoch}', figure=fig, global_step=epoch, close=True)
+                tb.add_figure(tag=f'run_{run_number}', figure=fig, global_step=epoch, close=True)
 
             plt.close()
 
@@ -421,13 +425,13 @@ def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=str, default='data/ids128.cache', help='Path to ids.json or dataset.cache of dataset')
     parser.add_argument('--image-folder', type=str, default='data/images', help='Path to source images')
-    parser.add_argument('--limit-number-of-records', type=int, default=30, help='Take only this maximum records from dataset')
+    parser.add_argument('--limit-number-of-records', type=int, default=None, help='Take only this maximum records from dataset')
 
     parser.add_argument('--epochs', type=int, default=1000)
-    parser.add_argument('--batch-size', type=int, default=16, help='Size of batch')
-    parser.add_argument('--lr', type=float, default=0.001, help='Starting learning rate')
+    parser.add_argument('--batch-size', type=int, default=64, help='Size of batch')
+    parser.add_argument('--lr', type=float, default=0.0002, help='Starting learning rate')
 
-    parser.add_argument('--checkpoint-interval', type=int, default=50, help='Save checkpoint every n epoch')
+    parser.add_argument('--checkpoint-interval', type=int, default=40, help='Save checkpoint every n epoch')
 
     opt = parser.parse_args()
     return vars(opt) # https://stackoverflow.com/questions/16878315/what-is-the-right-way-to-treat-python-argparse-namespace-as-a-dictionary

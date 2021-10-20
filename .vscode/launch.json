@@ -5,10 +5,10 @@
     "version": "0.2.0",
     "configurations": [
         {
-            "name": "Run pipeline",
+            "name": "Run",
             "type": "python",
             "request": "launch",
-            "program": "test.py",
+            "program": "yolodwg.py",
             "console": "integratedTerminal"
         },
     ]
