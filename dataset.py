@@ -126,7 +126,7 @@ class EntityDataset(Dataset):
 
         print(f'Entity dataset. Images: {len(self.data)} Max points:{self.max_labels}.')
 
-    def __init__(self, limit_number_of_records):
+    def __init__(self, limit_number_of_records=None):
         '''
 
         '''
