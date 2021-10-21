@@ -445,6 +445,7 @@ class Yolov4(nn.Module):
 class DwgKeyPointsYolov4(nn.Module):
     def __init__(self, requires_grad=True, pretrained=True, max_points=100, num_coordinates=2, num_pnt_classes=3, num_img_channels=3):
         super(DwgKeyPointsYolov4, self).__init__()
+
         self.max_points = max_points
         self.num_coordinates = num_coordinates
         self.num_pnt_classes = num_pnt_classes
@@ -454,17 +455,19 @@ class DwgKeyPointsYolov4(nn.Module):
 
         self.n_anchors = 3
 
-        self.model = Yolov4(n_classes=num_pnt_classes, inference=False)
-        # no pretrained for me
-        #if pretrained:
-        #    checkpoint = torch.load('yolov4.conv.137.pth', map_location=config.device)
-        #    load_cp = {}
-        #    for k in checkpoint:
-        #        new_key = k
-        #        if 'neek' in k:
-        #            new_key = k.replace('neek', 'neck')
-        #        load_cp[new_key] = checkpoint[k]
-        #    self.model.load_state_dict(load_cp)
+        #self.model = Yolov4(n_classes=num_pnt_classes, inference=False)
+        self.model = Yolov4(n_classes=80, inference=False)
+
+        if pretrained:
+            
+            checkpoint = torch.load('yolov4.pth', map_location=config.device)
+            load_cp = {}
+            for k in checkpoint:
+                new_key = k
+                if 'neek' in k:
+                    new_key = k.replace('neek', 'neck')
+                load_cp[new_key] = checkpoint[k]
+            self.model.load_state_dict(load_cp)
 
         if requires_grad == True:
             for param in self.model.parameters():
@@ -473,22 +476,22 @@ class DwgKeyPointsYolov4(nn.Module):
             for param in self.model.parameters():
                 param.requires_grad = False
 
-        self.fc1 = nn.Linear(24*4*4, self.max_points * 2)
-        self.fc2 = nn.Linear(24*2*2, self.max_points * (self.num_pnt_classes + 1))
+        self.fc1 = nn.Linear(255 , self.max_points * 2)
+        self.fc2 = nn.Linear(255, self.max_points * (self.num_pnt_classes + 1))
     def forward(self, x):
         bs = x.shape[0]
         xin = self.model(x)
 
         coords, classes, _ = xin
-        # xcoord = coords.view(bs, -1, 4)
-        xcoord = F.adaptive_avg_pool2d(coords, 4)
+
+        xcoord = F.adaptive_max_pool2d(coords, 1)
         xcoord = xcoord.view(bs, -1)
-        #24*4*4
         xcoord = self.fc1(xcoord)
         xcoord = xcoord.view(bs, self.max_points, -1)
 
+        # classes = classes[:, :self.num_pnt_classes + 1, :, :]
         # xclasses = classes.view(bs, (self.num_pnt_classes + 5), self.n_anchors, -1)
-        xclasses = F.adaptive_max_pool2d(classes, 2)
+        xclasses = F.adaptive_max_pool2d(classes, 1)
         xclasses = xclasses.view(bs, -1)
         xclasses = self.fc2(xclasses)
         xclasses = xclasses.view(bs, self.max_points, -1)
