@@ -26,7 +26,7 @@ class DwgKeyPointsModel(nn.Module):
 
         self.dropout = nn.Dropout2d(p=0.2)
 
-        self.fc1 = nn.Linear(s*8, self.output_size)
+        self.fc1 = nn.Linear(s*32, self.output_size)
     
     def forward(self, x):
         x = F.relu(self.conv1(x))
@@ -39,13 +39,13 @@ class DwgKeyPointsModel(nn.Module):
         x = self.pool(x)
 
         bs, _, _, _ = x.shape
-        x = F.adaptive_avg_pool2d(x, 1)
+        x = F.adaptive_avg_pool2d(x, 2)
         x = x.view(bs, -1)
-        x = self.dropout(x)
+        #x = self.dropout(x)
 
         x = self.fc1(x)
         x = x.view(bs, self.max_points, -1)
-        # scale class predicions to sum up to 1
+        # scale class predictions to sum up to 1
         # x[:, :, 2:] = F.softmax(x[:, :, 2:])
 
         return x

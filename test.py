@@ -138,6 +138,15 @@ def test_yolo_model():
     print(torch.max(res).item(), '\n')
 
 
+def test_rcnn():
+    from DwgKeyPointRcnn import get_keypoint_rcnn
+    model = get_keypoint_rcnn()
+    model.eval()
+    
+    x = [torch.rand(3, 300, 400), torch.rand(3, 500, 400)]
+    predictions = model(x)
+    print(predictions)
 
 if __name__ == "__main__":
-    test_yolo_model()
+    #test_yolo_model()
+    test_rcnn()

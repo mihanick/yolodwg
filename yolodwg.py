@@ -8,7 +8,6 @@ import argparse
 import numpy as np
 import matplotlib.pyplot as plt
 
-
 import torch
 import torch.nn as nn
 import torch.nn.functional as F
@@ -20,6 +19,7 @@ from dataset import DwgDataset, EntityDataset
 from models.DwgKeyPointsModel import DwgKeyPointsModel
 from models.DwgKeyPointsResNet50 import DwgKeyPointsResNet50
 from models.DwgKeyPointsYolov4 import DwgKeyPointsYolov4
+from models.DwgKeyPointRcnn import DwgKeyPointsRcnn
 
 from plot import plot_batch_grid, plot_loader_predictions
 
@@ -191,6 +191,40 @@ def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epo
 
     return running_loss / counter
 
+def train_epoch_rcnn(model, loader, device, criterion, optimizer, scheduler=None, epoch=0, epochs=0, plot_prediction=False, plot_folder='runs'):
+    '''
+    '''
+    model.train()
+
+    progress_bar = tqdm(enumerate(loader), total=len(loader))
+    for batch_i, (imgs, targets) in progress_bar:
+
+        imgs = imgs.to(device)
+        targets = targets.to(device)
+
+        optimizer.zero_grad()
+
+        out = model(imgs, targets)
+
+        loss_keypoint = out['loss_keypoint']
+        loss_keypoint.backward()
+
+        optimizer.step()
+        if scheduler is not None:
+            scheduler.step()
+
+        progress_bar.set_description(f'[{epoch} / {epochs}]Train. GPU:{get_gpu_mem_usage():.1f}G RAM:{get_ram_mem_usage():.0f}% coord:{loss_keypoint:.4f} cls:{0:.4f}')
+
+        #debug plot
+        if plot_prediction and plot_folder is not None:
+            plot_batch_grid(
+                        input_images=imgs,
+                        true_keypoints=targets,
+                        predictions=out,
+                        plot_save_file=f'{plot_folder}/train_{epoch}_{batch_i}.png')
+            plt.close()
+    return loss_keypoint
+
 def calculate_metrics_per_batch(out, ground_truth, criterion=None):
 
     if criterion is not None:
@@ -233,10 +267,14 @@ def calculate_metrics_per_batch(out, ground_truth, criterion=None):
                 # find all distances from current point to predictions
                 distances_from_current_point = torch.sqrt((prediction[:, 0] - pnt_x) ** 2 + (prediction[:, 1] - pnt_y) **2)
                 closest_prediction_idx = torch.argmin(distances_from_current_point)
+                # calculate min distance to compare with tolerance
                 closest_pnt = prediction[closest_prediction_idx]
                 closest_pnt_cls = predicted_classes[closest_prediction_idx]
-                # calculate min distance to compare with tolerance
-                if closest_pnt_cls == target_cls and distances_from_current_point[closest_prediction_idx] <= tolerance:
+                
+                # Whether to check pnt class or only account keypoint position
+                dont_check_pnt_class = True
+                
+                if (dont_check_pnt_class or closest_pnt_cls == target_cls) and distances_from_current_point[closest_prediction_idx] <= tolerance:
                     tp_this_image += 1
                 else:
                     fp_this_image += 1
@@ -316,22 +354,6 @@ def run(
         limit_number_of_records=None
     ):
 
-    runs_dir = 'runs'
-
-    # autoincrement run
-    run_number = 1
-    for dir in os.walk(runs_dir):
-        for dirno in dir[1]:
-            if dirno.isdigit():
-                no = int(dirno)
-                if no >= run_number:
-                    run_number = no + 1
-    tb_log_path = f'{runs_dir}/{run_number}'
-
-    #https://stackoverflow.com/questions/40426502/is-there-a-way-to-suppress-the-messages-tensorflow-prints
-    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
-    tb = SummaryWriter(tb_log_path)
-
     # create dataset from images or from cache
     # debug: take only small number of records from dataset
     entities = EntityDataset(limit_number_of_records=limit_number_of_records)
@@ -347,8 +369,18 @@ def run(
 
     # create model
     model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_pnt_classes=dwg_dataset.entities.num_pnt_classes, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
-    #model = DwgKeyPointsResNet50(pretrained=True, requires_grad=True, max_points=dwg_dataset.entities.max_labels, num_pnt_classes=dwg_dataset.entities.num_pnt_classes, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
-    #model = DwgKeyPointsYolov4(requires_grad=True, pretrained=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
+    # model = DwgKeyPointsResNet50(pretrained=True, requires_grad=True, max_points=dwg_dataset.entities.max_labels, num_pnt_classes=dwg_dataset.entities.num_pnt_classes, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
+    # model = DwgKeyPointsYolov4(requires_grad=True, pretrained=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
+
+    #n_labels = entities.max_labels // entities.num_pnt_classes
+    #model = DwgKeyPointsRcnn(
+    #                        requires_grad=False,
+    #                        pretrained=True,
+    #                        max_labels=n_labels,
+    #                        num_pnt_classes=dwg_dataset.entities.num_pnt_classes,
+    #                        num_coordinates=dwg_dataset.entities.num_coordinates,
+    #                        num_img_channels=dwg_dataset.entities.num_image_channels)
+
     model.to(config.device)
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
@@ -357,7 +389,24 @@ def run(
     #scheduler = StepLR(optimizer, step_size=10, gamma=0.9)
 
     #criterion = non_zero_loss(coordinate_loss_name="MSELoss", coordinate_loss_multiplier=100, class_loss_multiplier=0.001)
-    criterion = non_zero_loss(coordinate_loss_name="chamfer_distance", coordinate_loss_multiplier=1, class_loss_multiplier=0.001)
+    criterion = non_zero_loss(coordinate_loss_name="chamfer_distance", coordinate_loss_multiplier=1, class_loss_multiplier=0)
+
+    # logging to TB
+    runs_dir = 'runs'
+
+    # autoincrement run (better to do it after loading model and dataset - less folders in debug)
+    run_number = 1
+    for log_dir in os.walk(runs_dir):
+        for dirno in log_dir[1]:
+            if dirno.isdigit():
+                no = int(dirno)
+                if no >= run_number:
+                    run_number = no + 1
+    tb_log_path = f'{runs_dir}/{run_number}'
+
+    #https://stackoverflow.com/questions/40426502/is-there-a-way-to-suppress-the-messages-tensorflow-prints
+    os.environ['TF_CPP_MIN_LOG_LEVEL'] = '3'
+    tb = SummaryWriter(tb_log_path)
 
     best_recall = 0.0
     best_precision = 0.0
@@ -365,7 +414,11 @@ def run(
     for epoch in range(epochs):
         start = time.time()
 
-        train_loss = train_epoch(
+        train_f = train_epoch
+        if isinstance(model, DwgKeyPointsRcnn):
+            train_f = train_epoch_rcnn
+
+        train_loss = train_f(
                                 model=model,
                                 loader=train_loader,
                                 device=config.device,
@@ -427,9 +480,9 @@ def parse_opt():
     parser.add_argument('--image-folder', type=str, default='data/images', help='Path to source images')
     parser.add_argument('--limit-number-of-records', type=int, default=None, help='Take only this maximum records from dataset')
 
-    parser.add_argument('--epochs', type=int, default=1000)
-    parser.add_argument('--batch-size', type=int, default=64, help='Size of batch')
-    parser.add_argument('--lr', type=float, default=0.0002, help='Starting learning rate')
+    parser.add_argument('--epochs', type=int, default=100)
+    parser.add_argument('--batch-size', type=int, default=10, help='Size of batch')
+    parser.add_argument('--lr', type=float, default=0.001, help='Starting learning rate')
 
     parser.add_argument('--checkpoint-interval', type=int, default=40, help='Save checkpoint every n epoch')
 
