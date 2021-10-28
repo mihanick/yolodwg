@@ -363,3 +363,4 @@ data/labels*.pickle
 
 runs
 yolov4.pth
+data/geometry3/*

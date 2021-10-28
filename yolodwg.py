@@ -125,19 +125,13 @@ class non_zero_loss(nn.Module):
         else:
             coordinate_loss = self.coordinate_loss_f(outs[:, :, :2], ground_truth[:, :, 2:4])
 
-        # Classification loss calculation:
-        classification_loss = 0
-        for b, gtb in enumerate(ground_truth):
-            
-            # Take only outs[:, :, 2:] - these are per-class nn outputs
-            predicted_classes_map = outs[b, :, 2:]
+        # https://stackoverflow.com/questions/57065070/pytorch-dimension-out-of-range-expected-to-be-in-range-of-1-0-but-got-1
+        # Importante her that we take pnt class number as input for CrossEntropyLoss
+        predictions = outs[:, :, 2:]
+        n_classes = predictions.shape[-1]
+        gt_classes = ground_truth[:, :, 1].long()
+        classification_loss = self.cls_loss_f(predictions.view(-1, n_classes), gt_classes.view(-1))
 
-            # https://stackoverflow.com/questions/57065070/pytorch-dimension-out-of-range-expected-to-be-in-range-of-1-0-but-got-1
-            # Importante here that we take pnt class number as input for CrossEntropyLoss
-            gt_pnt_class = gtb[:, 1].long()
-
-            classification_loss += self.cls_loss_f(predicted_classes_map, gt_pnt_class)
-        
         # Total loss value:
         total_loss = self.coordinate_loss_multiplier * coordinate_loss + self.class_loss_multiplier * classification_loss
 
@@ -271,10 +265,7 @@ def calculate_metrics_per_batch(out, ground_truth, criterion=None):
                 closest_pnt = prediction[closest_prediction_idx]
                 closest_pnt_cls = predicted_classes[closest_prediction_idx]
                 
-                # Whether to check pnt class or only account keypoint position
-                dont_check_pnt_class = True
-                
-                if (dont_check_pnt_class or closest_pnt_cls == target_cls) and distances_from_current_point[closest_prediction_idx] <= tolerance:
+                if distances_from_current_point[closest_prediction_idx] <= tolerance and closest_pnt_cls == target_cls:
                     tp_this_image += 1
                 else:
                     fp_this_image += 1
@@ -330,7 +321,8 @@ def val_epoch(model, loader, criterion, device, epoch=0, epochs=0, plot_predicti
                             true_keypoints=ground_truth,
                             predictions=out,
                             plot_save_file=f'{plot_folder}/validation_{epoch}_{batch_i}.png')
-                plt.close() # TODO: reduce memory for plotting val!
+                plt.close() 
+                # TODO: reduce memory for plotting val!
 
             progress_bar.set_description(f"[{epoch} / {epochs}]Val  . Precision:{precision:.4f}. Recall:{recall:.4f}. F1:{f1:4f} Runnning loss: {loss:.4f}")
 
@@ -351,7 +343,9 @@ def run(
         lr=0.001,
 
         validate=True,
-        limit_number_of_records=None
+        limit_number_of_records=None,
+
+        checkpoint_path=None
     ):
 
     # create dataset from images or from cache
@@ -380,8 +374,8 @@ def run(
     #                        num_pnt_classes=dwg_dataset.entities.num_pnt_classes,
     #                        num_coordinates=dwg_dataset.entities.num_coordinates,
     #                        num_img_channels=dwg_dataset.entities.num_image_channels)
-
     model.to(config.device)
+
 
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     #optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.99)
@@ -429,45 +423,46 @@ def run(
                                 epochs=epochs,
                                 plot_prediction=False,
                                 plot_folder=tb_log_path)
+        checkpoint_is_here = checkpoint_interval is not None and epoch % checkpoint_interval == 0
+        if checkpoint_is_here:
+            val_loss, precision, recall, f1 = 0, 0, 0, 0
+            if validate:
+                val_loss, precision, recall, f1 = val_epoch(
+                                    model=model,
+                                    loader=val_loader,
+                                    device=config.device,
+                                    criterion=criterion,
+                                    epoch=epoch,
+                                    epochs=epochs,
+                                    plot_folder=tb_log_path,
+                                    plot_prediction=False)
 
-        val_loss, precision, recall, f1 = 0, 0, 0, 0
-        if validate:
-            val_loss, precision, recall, f1 = val_epoch(
-                                model=model,
-                                loader=val_loader,
-                                device=config.device,
-                                criterion=criterion,
-                                epoch=epoch,
-                                epochs=epochs,
-                                plot_folder=tb_log_path,
-                                plot_prediction=False)
+            last_epoch = (epoch == epochs - 1)
+            checkpoint_is_better = recall != 0 and precision != 0 and (recall >= best_recall and precision >= best_precision)
+            should_save_checkpoint = checkpoint_is_here or last_epoch or checkpoint_is_better
+            if should_save_checkpoint:
+                save_checkpoint(model, optimizer, checkpoint_path=f'{tb_log_path}/checkpoint{epoch}.weights', precision=precision, recall=recall, f1=f1)
+                # Display generated figure in tensorboard
+                figs = plot_loader_predictions(loader=val_loader, model=model, epoch=epoch, plot_folder=tb_log_path)
+                for i, fig in enumerate(figs):
+                    tb.add_figure(tag=f'run_{run_number}', figure=fig, global_step=epoch, close=True)
 
-        last_epoch = (epoch == epochs - 1)
-        checkpoint_is_better = recall != 0 and precision != 0 and (recall >= best_recall and precision >= best_precision)
-        should_save_checkpoint = (checkpoint_interval is not None and epoch % checkpoint_interval == 0) or last_epoch or checkpoint_is_better
-        if should_save_checkpoint:
-            save_checkpoint(model, optimizer, checkpoint_path=f'{tb_log_path}/checkpoint{epoch}.weights', precision=precision, recall=recall, f1=f1)
-            # Display generated figure in tensorboard
-            figs = plot_loader_predictions(loader=val_loader, model=model, epoch=epoch, plot_folder=tb_log_path)
-            for i, fig in enumerate(figs):
-                tb.add_figure(tag=f'run_{run_number}', figure=fig, global_step=epoch, close=True)
+                plt.close()
 
-            plt.close()
+            # save checkpoint for best results
+            if checkpoint_is_better:
+                best_precision = precision
+                best_recall = recall
+                save_checkpoint(model, optimizer, checkpoint_path=f'{tb_log_path}/best.weights', precision=precision, recall=recall, f1=f1)
+                # print(f"Best recall: {best_recall:.4f} Best precision: {best_precision:.4f}")
 
-        # save checkpoint for best results
-        if checkpoint_is_better:
-            best_precision = precision
-            best_recall = recall
-            save_checkpoint(model, optimizer, checkpoint_path=f'{tb_log_path}/best.weights', precision=precision, recall=recall, f1=f1)
-            # print(f"Best recall: {best_recall:.4f} Best precision: {best_precision:.4f}")
+            print(f'[{epoch} / {epochs}]@{(time.time() - start):.0f} sec. train loss: {train_loss:.4f} val_loss:{val_loss:.4f} precision: {precision:.4f} recall: {recall:.4f} f1: {f1:.4f} \n')
 
-        print(f'[{epoch} / {epochs}]@{(time.time() - start):.0f} sec. train loss: {train_loss:.4f} val_loss:{val_loss:.4f} precision: {precision:.4f} recall: {recall:.4f} f1: {f1:.4f} \n')
-
-        tb.add_scalar("loss/train", train_loss, epoch)
-        tb.add_scalar("loss/val", val_loss, epoch)
-        tb.add_scalar("accuracy/precision", precision, epoch)
-        tb.add_scalar("accuracy/recall", recall, epoch)
-        tb.add_scalar("accuracy/f1", f1, epoch)
+            tb.add_scalar("loss/train", train_loss, epoch)
+            tb.add_scalar("loss/val", val_loss, epoch)
+            tb.add_scalar("accuracy/precision", precision, epoch)
+            tb.add_scalar("accuracy/recall", recall, epoch)
+            tb.add_scalar("accuracy/f1", f1, epoch)
     print(f'[DONE] @{time.time() - start:.0f} sec. Training achieved best precision: {best_precision:.4f} best recall: {best_recall:.4f}. This run data is at "{tb_log_path}"')
     tb.close()
 
@@ -476,15 +471,13 @@ def run(
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default='data/ids128.cache', help='Path to ids.json or dataset.cache of dataset')
+    parser.add_argument('--data', type=str, default='data/single128.cache', help='Path to ids.json or dataset.cache of dataset')
     parser.add_argument('--image-folder', type=str, default='data/images', help='Path to source images')
     parser.add_argument('--limit-number-of-records', type=int, default=None, help='Take only this maximum records from dataset')
 
-    parser.add_argument('--epochs', type=int, default=100)
-    parser.add_argument('--batch-size', type=int, default=10, help='Size of batch')
-    parser.add_argument('--lr', type=float, default=0.001, help='Starting learning rate')
-
-    parser.add_argument('--checkpoint-interval', type=int, default=40, help='Save checkpoint every n epoch')
+    parser.add_argument('--epochs', type=int, default=1000)
+    parser.add_argument('--batch-size', type=int, default=512, help='Size of batch')
+    parser.add_argument('--lr', type=float, default=0.08, help='Starting learning rate')
 
     opt = parser.parse_args()
     return vars(opt) # https://stackoverflow.com/questions/16878315/what-is-the-right-way-to-treat-python-argparse-namespace-as-a-dictionary
@@ -501,4 +494,6 @@ if __name__ == "__main__":
         checkpoint_interval=opt['checkpoint_interval'],
         lr=opt['lr'],
         validate=True,
-        limit_number_of_records=opt['limit_number_of_records'])
+        limit_number_of_records=opt['limit_number_of_records'],
+        
+        checkpoint_path=opt['checkpoint'])
