@@ -39,7 +39,8 @@ def save_checkpoint(model, optimizer, checkpoint_path, precision=0, recall=0, f1
         'num_pnt_classes':model.num_pnt_classes,
         'model_state_dict':model.state_dict(),
         'optimizer_state_dict': optimizer.state_dict(),
-        # TODO: Resume training?
+        
+
         'precision': precision,
         'recall': recall,
         'f1':f1
@@ -382,8 +383,17 @@ def run(
     scheduler = None 
     #scheduler = StepLR(optimizer, step_size=10, gamma=0.9)
 
-    #criterion = non_zero_loss(coordinate_loss_name="MSELoss", coordinate_loss_multiplier=100, class_loss_multiplier=0.001)
-    criterion = non_zero_loss(coordinate_loss_name="chamfer_distance", coordinate_loss_multiplier=1, class_loss_multiplier=0)
+    criterion = non_zero_loss(coordinate_loss_name="MSELoss", coordinate_loss_multiplier=10, class_loss_multiplier=1)
+    #criterion = non_zero_loss(coordinate_loss_name="chamfer_distance", coordinate_loss_multiplier=1, class_loss_multiplier=1)
+
+    if checkpoint_path:
+        if Path(checkpoint_path).exists():
+            checkpoint = torch.load(checkpoint_path)
+            max_points = checkpoint['max_points']
+            num_coordinates = checkpoint['num_coordinates']
+            
+            model.load_state_dict(checkpoint['model_state_dict'])
+            optimizer.load_state_dict(checkpoint['optimizer_state_dict'])
 
     # logging to TB
     runs_dir = 'runs'
@@ -479,6 +489,8 @@ def parse_opt():
     parser.add_argument('--batch-size', type=int, default=512, help='Size of batch')
     parser.add_argument('--lr', type=float, default=0.08, help='Starting learning rate')
 
+    parser.add_argument('--checkpoint-interval', type=int, default=50, help='Save checkpoint every n epoch')
+    parser.add_argument('--checkpoint', type=str, default='runs/4/best.weights', help='Path to starting checkpoint weights')
     opt = parser.parse_args()
     return vars(opt) # https://stackoverflow.com/questions/16878315/what-is-the-right-way-to-treat-python-argparse-namespace-as-a-dictionary
 
