@@ -364,7 +364,7 @@ def run(
 
     # create model
     model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_pnt_classes=dwg_dataset.entities.num_pnt_classes, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
-    # model = DwgKeyPointsResNet50(pretrained=True, requires_grad=True, max_points=dwg_dataset.entities.max_labels, num_pnt_classes=dwg_dataset.entities.num_pnt_classes, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
+    #model = DwgKeyPointsResNet50(pretrained=True, requires_grad=False, max_points=dwg_dataset.entities.max_labels, num_pnt_classes=dwg_dataset.entities.num_pnt_classes, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
     # model = DwgKeyPointsYolov4(requires_grad=True, pretrained=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
 
     #n_labels = entities.max_labels // entities.num_pnt_classes
@@ -381,9 +381,9 @@ def run(
     optimizer = torch.optim.Adam(model.parameters(), lr=lr)
     #optimizer = torch.optim.SGD(model.parameters(), lr=lr, momentum=0.99)
     scheduler = None 
-    #scheduler = StepLR(optimizer, step_size=10, gamma=0.9)
+    #scheduler = StepLR(optimizer, step_size=10, gamma=0.95)
 
-    criterion = non_zero_loss(coordinate_loss_name="MSELoss", coordinate_loss_multiplier=10, class_loss_multiplier=1)
+    criterion = non_zero_loss(coordinate_loss_name="MSELoss", coordinate_loss_multiplier=1, class_loss_multiplier=1)
     #criterion = non_zero_loss(coordinate_loss_name="chamfer_distance", coordinate_loss_multiplier=1, class_loss_multiplier=1)
 
     if checkpoint_path:
@@ -433,6 +433,7 @@ def run(
                                 epochs=epochs,
                                 plot_prediction=False,
                                 plot_folder=tb_log_path)
+
         checkpoint_is_here = checkpoint_interval is not None and epoch % checkpoint_interval == 0
         if checkpoint_is_here:
             val_loss, precision, recall, f1 = 0, 0, 0, 0
@@ -473,6 +474,7 @@ def run(
             tb.add_scalar("accuracy/precision", precision, epoch)
             tb.add_scalar("accuracy/recall", recall, epoch)
             tb.add_scalar("accuracy/f1", f1, epoch)
+
     print(f'[DONE] @{time.time() - start:.0f} sec. Training achieved best precision: {best_precision:.4f} best recall: {best_recall:.4f}. This run data is at "{tb_log_path}"')
     tb.close()
 
@@ -485,12 +487,12 @@ def parse_opt():
     parser.add_argument('--image-folder', type=str, default='data/images', help='Path to source images')
     parser.add_argument('--limit-number-of-records', type=int, default=None, help='Take only this maximum records from dataset')
 
-    parser.add_argument('--epochs', type=int, default=1000)
-    parser.add_argument('--batch-size', type=int, default=512, help='Size of batch')
-    parser.add_argument('--lr', type=float, default=0.08, help='Starting learning rate')
+    parser.add_argument('--epochs', type=int, default=2000)
+    parser.add_argument('--batch-size', type=int, default=256, help='Size of batch')
+    parser.add_argument('--lr', type=float, default=0.00008, help='Starting learning rate')
 
-    parser.add_argument('--checkpoint-interval', type=int, default=50, help='Save checkpoint every n epoch')
-    parser.add_argument('--checkpoint', type=str, default='runs/4/best.weights', help='Path to starting checkpoint weights')
+    parser.add_argument('--checkpoint-interval', type=int, default=10, help='Save checkpoint every n epoch')
+    parser.add_argument('--checkpoint', type=str, default=None, help='Path to starting checkpoint weights')
     opt = parser.parse_args()
     return vars(opt) # https://stackoverflow.com/questions/16878315/what-is-the-right-way-to-treat-python-argparse-namespace-as-a-dictionary
 

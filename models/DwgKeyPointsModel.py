@@ -26,9 +26,10 @@ class DwgKeyPointsModel(nn.Module):
 
         self.dropout = nn.Dropout2d(p=0.2)
 
-        self.fc1 = nn.Linear(128*4*4, 512)
+        self.fc1 = nn.Linear(128*14*14, 512)
         self.fc2 = nn.Linear(512, 128)
         self.fc3 = nn.Linear(128, self.output_size)
+
     def forward(self, x):
         x = F.relu(self.conv1(x))
         x = self.pool(x)
@@ -40,9 +41,8 @@ class DwgKeyPointsModel(nn.Module):
         x = self.pool(x)
 
         bs, _, _, _ = x.shape
-        x = F.adaptive_avg_pool2d(x, 4)
+        x = F.adaptive_avg_pool2d(x, 4) #ims*128*4*4
         x = x.reshape(bs, -1)
-        #x = self.dropout(x)
 
         x = F.relu(self.fc1(x))
         x = F.relu(self.fc2(x))

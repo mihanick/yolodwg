@@ -17,8 +17,9 @@ class DwgKeyPointsResNet50(nn.Module):
         self.num_channels = num_img_channels
         
 
-        self.model = models.resnet50(pretrained=pretrained)
-        self.model.fc = nn.Linear(2048, self.output_size * 4)
+        #self.model = models.resnet50(pretrained=pretrained)
+        self.model = models.resnet152(pretrained=pretrained)
+        self.model.fc = nn.Linear(2048, 1024)
 
         if requires_grad == True:
             for param in self.model.parameters():
@@ -29,15 +30,18 @@ class DwgKeyPointsResNet50(nn.Module):
         for param in self.model.fc.parameters():
             param.requires_grad = True
 
-        self.bn = nn.BatchNorm1d(1024)
-        self.do = nn.Dropout()
-        # add the final layer
-        self.l0 = nn.Linear(100, self.output_size)
+        self.fc1 = nn.Linear(1024, 512)
+        self.fc2 = nn.Linear(512, 128)
+        self.fc3 = nn.Linear(128, self.output_size)
 
     def forward(self, x):
         # get the batch size only, ignore (c, h, w)
         batch, _, _, _ = x.shape
         x = self.model(x)
-        x = x.reshape(batch, self.max_points, -1)
-        x = F.adaptive_max_pool2d(x, (self.max_points, self.num_features))
+
+        x = F.relu(self.fc1(x))
+        x = F.relu(self.fc2(x))
+        x = self.fc3(x)
+
+        x = x.view(batch, self.max_points, self.num_features)
         return x
