@@ -158,22 +158,28 @@ def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epo
         targets = targets.to(device)
 
         batch_size = targets.shape[0]
+        coord_l = 0
+        cls_l = 0
 
         optimizer.zero_grad()
 
-        out = model(imgs)
-
-        loss, coord_l, cls_l = criterion(out, targets)
-        ch_l = my_chamfer_distance(out[:, :, :2],targets[:, :, 2:4])
+        if isinstance(model, DwgKeyPointsRcnn):
+            out = model(imgs, targets)
+            loss = out['loss_keypoint']
+            counter = 1
+        else:
+            out = model(imgs)
+            loss, coord_l, cls_l = criterion(out, targets)
+        #ch_l = my_chamfer_distance(out[:, :, :2],targets[:, :, 2:4])
 
         running_loss += loss.item()
         loss.backward()
-
+            
         optimizer.step()
         if scheduler is not None:
             scheduler.step()
 
-        progress_bar.set_description(f'[{epoch} / {epochs}]Train. GPU:{get_gpu_mem_usage():.1f}G RAM:{get_ram_mem_usage():.0f}% Running loss: {running_loss / counter:.4f} coord:{coord_l:.4f} cls:{cls_l:.4f} chd:{ch_l:.4f}')
+        progress_bar.set_description(f'[{epoch} / {epochs}]Train. GPU:{get_gpu_mem_usage():.1f}G RAM:{get_ram_mem_usage():.0f}% Running loss: {running_loss / counter:.4f} coord:{coord_l:.4f} cls:{cls_l:.4f}')
 
         #debug plot
         if plot_prediction and plot_folder is not None:
@@ -185,40 +191,6 @@ def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epo
             plt.close()
 
     return running_loss / counter
-
-def train_epoch_rcnn(model, loader, device, criterion, optimizer, scheduler=None, epoch=0, epochs=0, plot_prediction=False, plot_folder='runs'):
-    '''
-    '''
-    model.train()
-
-    progress_bar = tqdm(enumerate(loader), total=len(loader))
-    for batch_i, (imgs, targets) in progress_bar:
-
-        imgs = imgs.to(device)
-        targets = targets.to(device)
-
-        optimizer.zero_grad()
-
-        out = model(imgs, targets)
-
-        loss_keypoint = out['loss_keypoint']
-        loss_keypoint.backward()
-
-        optimizer.step()
-        if scheduler is not None:
-            scheduler.step()
-
-        progress_bar.set_description(f'[{epoch} / {epochs}]Train. GPU:{get_gpu_mem_usage():.1f}G RAM:{get_ram_mem_usage():.0f}% coord:{loss_keypoint:.4f} cls:{0:.4f}')
-
-        #debug plot
-        if plot_prediction and plot_folder is not None:
-            plot_batch_grid(
-                        input_images=imgs,
-                        true_keypoints=targets,
-                        predictions=out,
-                        plot_save_file=f'{plot_folder}/train_{epoch}_{batch_i}.png')
-            plt.close()
-    return loss_keypoint
 
 def calculate_metrics_per_batch(out, ground_truth, criterion=None):
 
@@ -363,18 +335,18 @@ def run(
     val_loader   = dwg_dataset.val_loader
 
     # create model
-    model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_pnt_classes=dwg_dataset.entities.num_pnt_classes, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
-    #model = DwgKeyPointsResNet50(pretrained=True, requires_grad=False, max_points=dwg_dataset.entities.max_labels, num_pnt_classes=dwg_dataset.entities.num_pnt_classes, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
+    #model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_pnt_classes=dwg_dataset.entities.num_pnt_classes, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
+    # model = DwgKeyPointsResNet50(pretrained=True, requires_grad=False, max_points=dwg_dataset.entities.max_labels, num_pnt_classes=dwg_dataset.entities.num_pnt_classes, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
     # model = DwgKeyPointsYolov4(requires_grad=True, pretrained=True, max_points=dwg_dataset.entities.max_labels, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
 
-    #n_labels = entities.max_labels // entities.num_pnt_classes
-    #model = DwgKeyPointsRcnn(
-    #                        requires_grad=False,
-    #                        pretrained=True,
-    #                        max_labels=n_labels,
-    #                        num_pnt_classes=dwg_dataset.entities.num_pnt_classes,
-    #                        num_coordinates=dwg_dataset.entities.num_coordinates,
-    #                        num_img_channels=dwg_dataset.entities.num_image_channels)
+    n_labels = entities.max_labels // entities.num_pnt_classes
+    model = DwgKeyPointsRcnn(
+                            requires_grad=False,
+                            pretrained=True,
+                            max_labels=n_labels,
+                            num_pnt_classes=dwg_dataset.entities.num_pnt_classes,
+                            num_coordinates=dwg_dataset.entities.num_coordinates,
+                            num_img_channels=dwg_dataset.entities.num_image_channels)
     model.to(config.device)
 
 
@@ -418,11 +390,7 @@ def run(
     for epoch in range(epochs):
         start = time.time()
 
-        train_f = train_epoch
-        if isinstance(model, DwgKeyPointsRcnn):
-            train_f = train_epoch_rcnn
-
-        train_loss = train_f(
+        train_loss = train_epoch(
                                 model=model,
                                 loader=train_loader,
                                 device=config.device,
@@ -488,8 +456,8 @@ def parse_opt():
     parser.add_argument('--limit-number-of-records', type=int, default=None, help='Take only this maximum records from dataset')
 
     parser.add_argument('--epochs', type=int, default=2000)
-    parser.add_argument('--batch-size', type=int, default=256, help='Size of batch')
-    parser.add_argument('--lr', type=float, default=0.00008, help='Starting learning rate')
+    parser.add_argument('--batch-size', type=int, default=12, help='Size of batch')
+    parser.add_argument('--lr', type=float, default=0.0008, help='Starting learning rate')
 
     parser.add_argument('--checkpoint-interval', type=int, default=10, help='Save checkpoint every n epoch')
     parser.add_argument('--checkpoint', type=str, default=None, help='Path to starting checkpoint weights')
