@@ -23,12 +23,13 @@ class Upsample(nn.Module):
     def __init__(self):
         super(Upsample, self).__init__()
 
-    def forward(self, x, target_size, inference=False):
+    def forward(self, x, target_size):
         assert (x.data.dim() == 4)
         # _, _, tH, tW = target_size
 
-        if inference:
-
+        if self.training:
+            return F.interpolate(x, size=(target_size[2], target_size[3]), mode='nearest')
+        else:
             #B = x.data.size(0)
             #C = x.data.size(1)
             #H = x.data.size(2)
@@ -37,8 +38,6 @@ class Upsample(nn.Module):
             return x.view(x.size(0), x.size(1), x.size(2), 1, x.size(3), 1).\
                     expand(x.size(0), x.size(1), x.size(2), target_size[2] // x.size(2), x.size(3), target_size[3] // x.size(3)).\
                     contiguous().view(x.size(0), x.size(1), target_size[2], target_size[3])
-        else:
-            return F.interpolate(x, size=(target_size[2], target_size[3]), mode='nearest')
 
 
 class Conv_Bn_Activation(nn.Module):
@@ -179,7 +178,7 @@ class DownSample3(nn.Module):
         self.resblock = ResBlock(ch=128, nblocks=8)
         self.conv4 = Conv_Bn_Activation(128, 128, 1, 1, 'mish')
         self.conv5 = Conv_Bn_Activation(256, 256, 1, 1, 'mish')
-
+        
     def forward(self, input):
         x1 = self.conv1(input)
         x2 = self.conv2(x1)
@@ -242,9 +241,8 @@ class DownSample5(nn.Module):
 
 
 class Neck(nn.Module):
-    def __init__(self, inference=False):
+    def __init__(self):
         super().__init__()
-        self.inference = inference
 
         self.conv1 = Conv_Bn_Activation(1024, 512, 1, 1, 'leaky')
         self.conv2 = Conv_Bn_Activation(512, 1024, 3, 1, 'leaky')
@@ -282,7 +280,7 @@ class Neck(nn.Module):
         self.conv19 = Conv_Bn_Activation(128, 256, 3, 1, 'leaky')
         self.conv20 = Conv_Bn_Activation(256, 128, 1, 1, 'leaky')
 
-    def forward(self, input, downsample4, downsample3, inference=False):
+    def forward(self, input, downsample4, downsample3):
         x1 = self.conv1(input)
         x2 = self.conv2(x1)
         x3 = self.conv3(x2)
@@ -297,7 +295,7 @@ class Neck(nn.Module):
         x6 = self.conv6(x5)
         x7 = self.conv7(x6)
         # UP
-        up = self.upsample1(x7, downsample4.size(), self.inference)
+        up = self.upsample1(x7, downsample4.size())
         # R 85
         x8 = self.conv8(downsample4)
         # R -1 -3
@@ -311,7 +309,7 @@ class Neck(nn.Module):
         x14 = self.conv14(x13)
 
         # UP
-        up = self.upsample2(x14, downsample3.size(), self.inference)
+        up = self.upsample2(x14, downsample3.size())
         # R 54
         x15 = self.conv15(downsample3)
         # R -1 -3
@@ -326,9 +324,8 @@ class Neck(nn.Module):
 
 
 class Yolov4Head(nn.Module):
-    def __init__(self, output_ch, n_classes, inference=False):
+    def __init__(self, output_ch, n_classes):
         super().__init__()
-        self.inference = inference
 
         self.conv1 = Conv_Bn_Activation(128, 256, 3, 1, 'leaky')
         self.conv2 = Conv_Bn_Activation(256, output_ch, 1, 1, 'linear', bn=False, bias=True)
@@ -400,19 +397,18 @@ class Yolov4Head(nn.Module):
         x17 = self.conv17(x16)
         x18 = self.conv18(x17)
         
-        if self.inference:
+        if self.training:
+            return [x2, x10, x18]
+        else:
             y1 = self.yolo1(x2)
             y2 = self.yolo2(x10)
             y3 = self.yolo3(x18)
 
             return get_region_boxes([y1, y2, y3])
-        
-        else:
-            return [x2, x10, x18]
 
 
 class Yolov4(nn.Module):
-    def __init__(self, n_classes=80, inference=False):
+    def __init__(self, n_classes=80):
         super().__init__()
 
         output_ch = (4 + 1 + n_classes) * 3
@@ -424,10 +420,10 @@ class Yolov4(nn.Module):
         self.down4 = DownSample4()
         self.down5 = DownSample5()
         # neck
-        self.neck = Neck(inference)
+        self.neck = Neck()
 
         # head
-        self.head = Yolov4Head(output_ch, n_classes, inference)
+        self.head = Yolov4Head(output_ch, n_classes)
 
 
     def forward(self, input):
@@ -443,23 +439,29 @@ class Yolov4(nn.Module):
         return output
 
 class DwgKeyPointsYolov4(nn.Module):
-    def __init__(self, requires_grad=True, pretrained=True, max_points=100, num_coordinates=2, num_pnt_classes=3, num_img_channels=3):
+    def __init__(self,
+            max_boxes=30,
+            n_box_classes=1,
+            num_coordinates=2,
+            num_pnt_classes=3,
+            num_img_channels=3,
+            pretrained=True):
+        '''
+        pretrained will only work on n_classes == 80
+        '''
         super(DwgKeyPointsYolov4, self).__init__()
 
-        self.max_points = max_points
+        self.max_boxes = max_boxes
         self.num_coordinates = num_coordinates
         self.num_pnt_classes = num_pnt_classes
-        self.num_features = num_coordinates + num_pnt_classes + 1 # x, y, and each pnt cls and pnt_cls==0
-        self.output_size = self.max_points * self.num_features
         self.num_channels = num_img_channels
+        self.n_box_classes = n_box_classes
 
         self.n_anchors = 3
 
-        #self.model = Yolov4(n_classes=num_pnt_classes, inference=False)
-        self.model = Yolov4(n_classes=80, inference=False)
+        self.model = Yolov4(n_classes=n_box_classes)
 
-        if pretrained:
-            
+        if pretrained and self.n_box_classes == 80:
             checkpoint = torch.load('yolov4.pth', map_location=config.device)
             load_cp = {}
             for k in checkpoint:
@@ -469,36 +471,9 @@ class DwgKeyPointsYolov4(nn.Module):
                 load_cp[new_key] = checkpoint[k]
             self.model.load_state_dict(load_cp)
 
-        if requires_grad == True:
-            for param in self.model.parameters():
-                param.requires_grad = True
-        elif requires_grad == False:
-            for param in self.model.parameters():
-                param.requires_grad = False
-
-        self.fc1 = nn.Linear(255 , self.max_points * 2)
-        self.fc2 = nn.Linear(255, self.max_points * (self.num_pnt_classes + 1))
     def forward(self, x):
-        bs = x.shape[0]
         xin = self.model(x)
+        return xin
 
-        coords, classes, _ = xin
-
-        xcoord = F.adaptive_max_pool2d(coords, 1)
-        xcoord = xcoord.view(bs, -1)
-        xcoord = self.fc1(xcoord)
-        xcoord = xcoord.view(bs, self.max_points, -1)
-
-        # classes = classes[:, :self.num_pnt_classes + 1, :, :]
-        # xclasses = classes.view(bs, (self.num_pnt_classes + 5), self.n_anchors, -1)
-        xclasses = F.adaptive_max_pool2d(classes, 1)
-        xclasses = xclasses.view(bs, -1)
-        xclasses = self.fc2(xclasses)
-        xclasses = xclasses.view(bs, self.max_points, -1)
-
-        x = torch.cat((xcoord, xclasses), dim = 2)
-        x = x.view(bs, self.max_points, self.num_features)
-
-        return x
 if __name__ == "__main__":
     pass

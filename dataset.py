@@ -48,6 +48,31 @@ class EntityDataset(Dataset):
     '''
     Dataset of images - labels (points of dimensions)
     '''
+
+    
+    def __init__(self, limit_number_of_records=None):
+        '''
+
+        '''
+        
+        self.max_boxes = 1
+        self.max_keypoints_per_box = 3
+        self.img_size = None
+        self.num_image_channels = 3
+
+        self.limit_number_of_records = limit_number_of_records
+
+        self.classes = ['AlignedDimension']
+        self.pnt_classes = ['XLine1Point', 'XLine2Point', 'DimLinePoint']
+        self.coordinates = ['X', 'Y']
+
+        self.num_classes = len(self.classes)
+        self.num_pnt_classes = len(self.pnt_classes)
+        self.num_coordinates = len(self.coordinates)
+
+        self.ids = []
+        self.data = []
+
     def from_cache(self, cache_file):
         '''
         Reads from saved data using torch
@@ -57,21 +82,23 @@ class EntityDataset(Dataset):
             cached_data = torch.load(cache_file)
             # check cached validity:
             self.img_size = cached_data['img_size']
-            self.max_labels = cached_data['max_labels']
+            self.max_labels = cached_data['max_boxes']
+            self.max_keypoints_per_box = cached_data['max_keypoints_per_box']
             self.data = cached_data['data']
 
         except Exception as e:
             print(f'Could not load cache: {e}')
 
-        print(f'Entity dataset. Images: {len(self.data)} Max points:{self.max_labels}. Records limit:{self.limit_number_of_records}')
+        print(f'Entity dataset. Images: {len(self.data)} Max boxes:{self.max_boxes}. Max keypoints per box:{self.max_keypoints_per_box} Records limit:{self.limit_number_of_records}')
 
     def save_cache(self, save_path):
         # save creaed data as cache
         torch.save({
                     'img_size':self.img_size,
-                    'max_labels': self.max_labels,
+                    'max_boxes': self.max_boxes,
+                    'max_keypoits_per_box':self.max_keypoints_per_box,
                     'data':self.data
-                    }, 
+                    },
                     save_path)
 
     def from_json_ids_pickle_labels_img_folder(self, ids_file='ids.json', image_folder='data/images'):
@@ -98,55 +125,40 @@ class EntityDataset(Dataset):
                 dims = df[(df['GroupId'] == group_id) & (df['ClassName'] == class_name)]
                 dim_count = len(dims)
 
-                # [class_id, dim_id, pnt_id, x, y, good?]
-                labels = np.zeros([dim_count * len(self.pnt_classes), 1 + 1 + 1 + self.num_coordinates + 1], dtype=float)
-                # labels = np.zeros([dim_count, self.num_classes, self.num_pnt_classes, self.num_coordinates], dtype=float)
+                # remember maximum number of boxes
+                if dim_count > self.max_boxes:
+                    self.max_boxes = dim_count
 
-                pnt_row_counter = 0
+                # [class_id, dim_id, pnt_id, x, y, good?]
+                keypoints = np.zeros([dim_count * len(self.pnt_classes), 1 + 1 + 1 + self.num_coordinates + 1], dtype=float)
+                kp_counter = 0
+
                 for dim_no, dim_row in dims.iterrows():
                     for pnt_id, pnt_class in enumerate(self.pnt_classes):
-                        labels[pnt_row_counter, 0] = dim_no + 1 # dimension number
-                        labels[pnt_row_counter, 1] = pnt_id + 1 # point_id (nonzero)
+                        keypoints[kp_counter, 0] = dim_no + 1 # dimension number
+                        keypoints[kp_counter, 1] = pnt_id + 1 # point_id (nonzero)
                         for coord_id, coord_name in enumerate(self.coordinates):
                             coordval = dim_row[f'{pnt_class}.{coord_name}'] #  ['XLine1Point','XLine2Point','DimLinePoint'].[X,Y]
-                            labels[pnt_row_counter, 1 + 1 + coord_id] = coordval
-                        labels[pnt_row_counter, 1 + 1 + self.num_coordinates] = 0 # good
-                        labels[pnt_row_counter, 1 + 1 + 1 + self.num_coordinates] = class_id + 1 # AlignedDimension (nonzero)
-                        pnt_row_counter += 1
+                            keypoints[kp_counter, 1 + 1 + coord_id] = coordval
+                        keypoints[kp_counter, 1 + 1 + self.num_coordinates] = 0 # good
+                        keypoints[kp_counter, 1 + 1 + 1 + self.num_coordinates] = class_id + 1 # AlignedDimension (nonzero)
+                        kp_counter += 1
 
-                # remember maximum number of points
-                if pnt_row_counter > self.max_labels:
-                    self.max_labels = pnt_row_counter
+            keypoints[:, 2:4] /= self.img_size # scale coordinates to [0..1]
 
-            labels[:, 2:4] /= self.img_size # scale coordinates to [0..1]
-            #labels[:, 3] = labels[:, 3] # invert y coord as on the drawing it will be from top left, not from bottom left
-            self.data.append((img, labels))
+            # boundboxes are calculated from keypoints
+            boxes = np.zeros((dim_count, 5))
+            # x1y1 = xmin, ymin of all keypoints of one label (dim=1)
+            boxes[:, :2] = np.min(keypoints[:, 2:4], axis=0)
+            # x2y2 = xmax, ymax
+            boxes[:, 2:4] = np.max(keypoints[:, 2:4], axis=0)
+            boxes[:, 4] = 1
 
-            progress_bar.set_description(f'Gathering dataset. max labels: {self.max_labels}. {group_id}: labels: {pnt_row_counter}')
+            self.data.append((img, boxes, keypoints))
 
-        print(f'Entity dataset. Images: {len(self.data)} Max points:{self.max_labels}.')
+            progress_bar.set_description(f'Gathering dataset. max boxes: {self.max_boxes}. {group_id}: labels: {kp_counter}')
 
-    def __init__(self, limit_number_of_records=None):
-        '''
-
-        '''
-        
-        self.max_labels = 0
-        self.img_size = None
-        self.num_image_channels = 3
-
-        self.limit_number_of_records = limit_number_of_records
-
-        self.classes = ['AlignedDimension']
-        self.pnt_classes = ['XLine1Point', 'XLine2Point', 'DimLinePoint']
-        self.coordinates = ['X', 'Y']
-
-        self.num_classes = len(self.classes)
-        self.num_pnt_classes = len(self.pnt_classes)
-        self.num_coordinates = len(self.coordinates)
-
-        self.ids = []
-        self.data = []
+        print(f'Entity dataset. Images: {len(self.data)} Max boxes:{self.max_boxes}.')
 
     def __len__(self):
         if self.limit_number_of_records is not None:
@@ -154,8 +166,8 @@ class EntityDataset(Dataset):
         return len(self.data)
 
     def __getitem__(self, index):
-        img, lbl = self.data[index]
-        return img, lbl
+        img, boxes, keypoints = self.data[index]
+        return img, boxes, keypoints
 
 class DwgDataset:
     def __init__(self,
@@ -187,21 +199,26 @@ class DwgDataset:
         # https://stackoverflow.com/questions/64586575/adding-class-objects-to-pytorch-dataloader-batch-must-contain-tensors
         def custom_collate(sample):
             imgs = torch.zeros((self.batch_size, self.entities.num_image_channels, self.img_size, self.img_size), dtype=torch.float32)
+
             # batch * pnt_id * [dim_id, pnt_id, x, y, good, cls_id]
-            lbls = torch.zeros((self.batch_size, self.entities.max_labels, 1 + 1 + 1 + self.entities.num_coordinates + 1), dtype=torch.float32)
+            keypoints = torch.zeros((self.batch_size, self.entities.max_boxes * self.entities.max_keypoints_per_box, 1 + 1 + 1 + self.entities.num_coordinates + 1), dtype=torch.float32)
+            # batch * dim_id * [xmin ymin xmax ymax cls_id]
+            boxes = torch.zeros((self.batch_size, self.entities.max_boxes , 5), dtype=torch.float32)
 
             for i in range(len(sample)):
-                img, lbl = sample[i]
+                img, box, keypoint = sample[i]
                 ima = img / 255
                 ima = np.transpose(ima, (2, 0, 1)) # x, y, channels -> channels, x, y
                 ima = torch.from_numpy(ima)
-                #ima = ima.unsqueeze(0)
-
                 imgs[i] = ima
-                num_labels = lbl.shape[0]
-                lbls[i, :num_labels] = torch.from_numpy(lbl)
 
-            return imgs, lbls
+                num_keypoints = keypoint.shape[0]
+                keypoints[i, :num_keypoints] = torch.from_numpy(keypoint)
+
+                num_boxes = box.shape[0]
+                boxes[i, :num_boxes] = torch.from_numpy(box)
+
+            return imgs, boxes, keypoints
 
         self.train_loader = torch.utils.data.DataLoader(self.entities, batch_size=batch_size, sampler=train_sampler, collate_fn=custom_collate, shuffle=False, drop_last=False)
         self.val_loader   = torch.utils.data.DataLoader(self.entities, batch_size=batch_size, sampler=val_sampler, collate_fn=custom_collate, shuffle=False, drop_last=False)

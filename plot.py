@@ -11,15 +11,15 @@ import matplotlib
 matplotlib.style.use('ggplot')
 
 def plot_loader_predictions(loader, model, epoch=0, plot_folder=None, limit_number_of_plots=3):
-    
     if plot_folder is None:
         return
 
     model.eval()
     figs = []
-    with torch.no_grad():
-        for i, (imgs, targets) in enumerate(loader):
 
+    with torch.no_grad():
+        for i, (imgs, boxes, keypoints) in enumerate(loader):
+            continue # TODO: Plot
             imgs = imgs.to(config.device)
             targets = targets.to(config.device)
 
