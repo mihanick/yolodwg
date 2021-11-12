@@ -96,7 +96,7 @@ class EntityDataset(Dataset):
         torch.save({
                     'img_size':self.img_size,
                     'max_boxes': self.max_boxes,
-                    'max_keypoits_per_box':self.max_keypoints_per_box,
+                    'max_keypoints_per_box':self.max_keypoints_per_box,
                     'data':self.data
                     },
                     save_path)
@@ -145,7 +145,8 @@ class EntityDataset(Dataset):
                         kp_counter += 1
 
             keypoints[:, 2:4] /= self.img_size # scale coordinates to [0..1]
-
+            keypoints[:, 3] = 1 - keypoints[:, 3]
+            
             # boundboxes are calculated from keypoints
             boxes = np.zeros((dim_count, 5))
             # x1y1 = xmin, ymin of all keypoints of one label (dim=1)

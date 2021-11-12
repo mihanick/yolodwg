@@ -9,7 +9,9 @@ import numpy as np
 
 import itertools
 import struct  # get_image_size
-import imghdr  # get_image_size
+import imghdr
+
+from numpy.core.fromnumeric import amax  # get_image_size
 
 
 def sigmoid(x):
@@ -101,7 +103,8 @@ def nms_cpu(boxes, confs, nms_thresh=0.5, min_mode=False):
 
 def plot_boxes_cv2(img, boxes, savename=None, class_names=None, color=None):
     import cv2
-    img = np.copy(img)
+    img = np.ascontiguousarray(np.copy(img)) #https://stackoverflow.com/questions/23830618/python-opencv-typeerror-layout-of-the-output-array-incompatible-with-cvmat
+    
     colors = np.array([[1, 0, 1], [0, 0, 1], [0, 1, 1], [0, 1, 0], [1, 1, 0], [1, 0, 0]], dtype=np.float32)
 
     def get_color(c, x, max_val):
@@ -116,6 +119,7 @@ def plot_boxes_cv2(img, boxes, savename=None, class_names=None, color=None):
     height = img.shape[0]
     for i in range(len(boxes)):
         box = boxes[i]
+        box[:4] = np.clip(box[:4], a_min=0, a_max=1)
         x1 = int(box[0] * width)
         y1 = int(box[1] * height)
         x2 = int(box[2] * width)
@@ -137,7 +141,7 @@ def plot_boxes_cv2(img, boxes, savename=None, class_names=None, color=None):
             if color is None:
                 rgb = (red, green, blue)
             img = cv2.putText(img, class_names[cls_id], (x1, y1), cv2.FONT_HERSHEY_SIMPLEX, 1.2, rgb, 1)
-        img = cv2.rectangle(img, (x1, y1), (x2, y2), rgb, 1)
+        img = cv2.rectangle(img=img, pt1=(x1, y1), pt2=(x2, y2), color=rgb, thickness=1)
     if savename:
         print("save plot results to %s" % savename)
         cv2.imwrite(savename, img)

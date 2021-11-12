@@ -8,6 +8,8 @@ import config
 
 import matplotlib.pyplot as plt
 import matplotlib
+
+from models.utils import nms_conf_suppression, plot_boxes_cv2
 matplotlib.style.use('ggplot')
 
 def plot_loader_predictions(loader, model, epoch=0, plot_folder=None, limit_number_of_plots=3):
@@ -18,17 +20,18 @@ def plot_loader_predictions(loader, model, epoch=0, plot_folder=None, limit_numb
     figs = []
 
     with torch.no_grad():
-        for i, (imgs, boxes, keypoints) in enumerate(loader):
-            continue # TODO: Plot
+        for i, (imgs, boxes, true_keypoints) in enumerate(loader):
             imgs = imgs.to(config.device)
-            targets = targets.to(config.device)
 
             out = model(imgs)
+            predicted_boxes = out[0]
+            confidences = out[1]
+            predictions = nms_conf_suppression(box_array=predicted_boxes, confs=confidences, conf_thresh=0.25, nms_thresh=0.1)
 
             fig = plot_batch_grid(
                         input_images=imgs,
-                        true_keypoints=targets,
-                        predictions=out,
+                        true_keypoints=true_keypoints,
+                        predictions=predictions,
                         plot_save_file=f'{plot_folder}/checkpoint_{epoch}_{i}.png')
             figs.append(fig)
             if limit_number_of_plots is not None:
@@ -37,7 +40,7 @@ def plot_loader_predictions(loader, model, epoch=0, plot_folder=None, limit_numb
     return figs
     
 
-def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_save_file=None, max_grid_size=2, plot_labels=False):
+def plot_batch_grid(input_images, true_boxes=None, true_keypoints=None, predictions=None, plot_save_file=None, max_grid_size=2, plot_labels=False):
     '''
     input images torch.tensor(n_batches, channels, img_size, img_size)
     true_keypoints torch.tensor(n_batches, max_points * (classes + n_coords)
@@ -63,13 +66,18 @@ def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_sa
         plt.subplot(grid_size, grid_size, i + 1)
         plt.axis('off')
 
+        if predictions is not None:
+            input_image = plot_boxes_cv2(img=input_image, boxes=predictions[i])
+
+        if true_boxes is not None:
+            input_image = plot_boxes_cv2(img=input_image, boxes=true_boxes[i], color=(0,255,0))
         plt.imshow(input_image)
 
         if true_keypoints is not None:
             tkp = true_keypoints[i, :, 2:4].detach().cpu().numpy()
             if (tkp.shape[1] != 0): # Handle plot of empty ground_truth
                 tkp = tkp * img_size # scale coordinates to img size
-                tkp[:, 1] = img_size - tkp[:, 1] # flip y
+                # tkp[:, 1] = img_size - tkp[:, 1] # flip y
 
                 for p in range(tkp.shape[0]):
                     true_pnt_cls = true_keypoints[i, p, 5]
@@ -77,25 +85,6 @@ def plot_batch_grid(input_images, true_keypoints=None, predictions=None, plot_sa
                         plt.plot(tkp[p, 0], tkp[p, 1], 'g.')
                         if plot_labels:
                             plt.text(tkp[p, 0], tkp[p, 1], f'{true_pnt_cls}') # plt pnt class
-
-        if predictions is not None:
-            predicted_keypoints = predictions[i].detach().cpu().numpy()
-
-            for p in range(predicted_keypoints.shape[0]):
-                p_coords = predicted_keypoints[p,:2]
-                p_coords *= img_size #scale coordinates to img_size
-                p_coords[1] = img_size - p_coords[1] # flip y, as pyplot starts plotting from top lef, but coords are not from bottom left
-
-                p_pnt_cls=predicted_keypoints[p, 2:]
-                p_pnt_cls = np.exp(p_pnt_cls)/sum(np.exp(p_pnt_cls)) # softmax to sum up to 1
-                predicted_class = np.argmax(p_pnt_cls)
-                confidence = p_pnt_cls[predicted_class]
-
-                if predicted_class > 0:
-                    plt.plot( p_coords[0], p_coords[1], 'r.')
-                    if plot_labels:
-                        plt.text(p_coords[0], p_coords[1], f'{predicted_class}@{confidence * 100:.0f}%')
-                
 
     if plot_save_file is not None:
         plt.savefig(plot_save_file)

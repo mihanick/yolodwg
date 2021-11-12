@@ -32,7 +32,6 @@ import config
 #------------------------------
 
 def save_checkpoint(model, optimizer, checkpoint_path, iou=0):
-    
     folder = Path(checkpoint_path)
     folder.parent.mkdir(parents=True, exist_ok=True)
 
@@ -41,8 +40,7 @@ def save_checkpoint(model, optimizer, checkpoint_path, iou=0):
         'n_box_classes' : model.n_box_classes,
 
         'model_state_dict':model.state_dict(),
-        'optimizer_state_dict': optimizer.state_dict(),
-        
+        'optimizer_state_dict': optimizer.state_dict(),        
 
         'iou': iou,
     }, checkpoint_path)
@@ -91,16 +89,7 @@ def train_epoch(model, loader, device, criterion, optimizer, scheduler=None, epo
         if scheduler is not None:
             scheduler.step()
 
-        progress_bar.set_description(f'[{epoch} / {epochs}]Train. GPU:{get_gpu_mem_usage():.1f}G RAM:{get_ram_mem_usage():.0f}% Running loss: {running_loss / counter:.4f} coord:{coord_l:.4f} cls:{cls_l:.4f}')
-
-        #debug plot
-        if plot_prediction and plot_folder is not None:
-            plot_batch_grid(
-                        input_images=imgs,
-                        true_keypoints=keypoints,
-                        predictions=out,
-                        plot_save_file=f'{plot_folder}/train_{epoch}_{batch_i}.png')
-            plt.close()
+        progress_bar.set_description(f'[{epoch} / {epochs}]Train. GPU:{get_gpu_mem_usage():.1f}G RAM:{get_ram_mem_usage():.0f}% Running loss: {running_loss / counter:.4f}')
 
     return running_loss / counter
 
@@ -123,7 +112,7 @@ def val_epoch(model, loader, device, criterion=None, epoch=0, epochs=0, plot_pre
             predicted_boxes = out[0] # batch * 1008 * max_boxes * 4:[x1 y1 x2 y2]
             confidences = out[1] # batch * 1008 * n_classes
 
-            predictions = nms_conf_suppression(box_array=predicted_boxes, confs=confidences, conf_thresh=0.25, nms_thresh=0.5)
+            predictions = nms_conf_suppression(box_array=predicted_boxes, confs=confidences, conf_thresh=0.25, nms_thresh=0.1)
 
             # TODO: mean iou(boxes, true_boxes) mention device
             pred_counter = 0
@@ -139,6 +128,15 @@ def val_epoch(model, loader, device, criterion=None, epoch=0, epochs=0, plot_pre
             mean_ious.append(mean_iou)
             progress_bar.set_description(f"[{epoch} / {epochs}]Val . Mean IOU:{mean_iou:.4f}.")
 
+            #debug plot
+            if plot_prediction and plot_folder is not None:
+                plot_batch_grid(
+                            input_images=imgs,
+                            true_boxes=true_boxes,
+                            true_keypoints=keypoints,
+                            predictions=predictions,
+                            plot_save_file=f'{plot_folder}/val_{epoch}_{batch_i}.png')
+                plt.close()
             
     return np.mean(mean_ious)
 
@@ -158,7 +156,7 @@ def run(
     ):
 
     # create dataset from images or from cache
-    # debug: take only small number of records from dataset
+    # for debug: take only small number of records from dataset
     entities = EntityDataset(limit_number_of_records=limit_number_of_records)
     if data_file_path.endswith('.json'):
         entities.from_json_ids_pickle_labels_img_folder(ids_file=data_file_path, image_folder=image_folder)
@@ -166,9 +164,11 @@ def run(
         entities.from_cache(cache_file=data_file_path)
 
     dwg_dataset = DwgDataset(entities=entities, batch_size=batch_size)
-    #dwg_dataset.entities.save_cache('data/ids128.cache')
+    dwg_dataset.entities.save_cache('data/ids128.cache')
     train_loader = dwg_dataset.train_loader
     val_loader   = dwg_dataset.val_loader
+
+    assert len(train_loader) > 0 and len(val_loader) > 0, "No data"
 
     num_classes = dwg_dataset.entities.num_classes + 1
 
@@ -255,7 +255,7 @@ def run(
                                     epoch=epoch,
                                     epochs=epochs,
                                     plot_folder=tb_log_path,
-                                    plot_prediction=False)
+                                    plot_prediction=True)
 
             last_epoch = (epoch == epochs - 1)
             checkpoint_is_better = val_iou != 0 and (val_iou >= best_iou)
@@ -277,11 +277,8 @@ def run(
 
             print(f'[{epoch} / {epochs}]@{(time.time() - start):.0f} sec. train loss: {train_loss:.4f} val_iou:{val_iou:.4f} \n')
 
-            tb.add_scalar("loss/train", train_loss, epoch)
-            #tb.add_scalar("loss/val", val_loss, epoch)
+            tb.add_scalar("accuracy/train_loss", train_loss, epoch)
             tb.add_scalar("accuracy/iou", val_iou, epoch)
-            #tb.add_scalar("accuracy/recall", recall, epoch)
-            #tb.add_scalar("accuracy/f1", f1, epoch)
 
     print(f'[DONE] @{time.time() - start:.0f} sec. Training achieved best iou: {best_iou:.4f}. This run data is at "{tb_log_path}"')
     tb.close()
@@ -290,9 +287,9 @@ def run(
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default='data/ids128.json', help='Path to ids.json or dataset.cache of dataset')
+    parser.add_argument('--data', type=str, default='data/ids128.cache', help='Path to ids.json or dataset.cache of dataset')
     parser.add_argument('--image-folder', type=str, default='data/images', help='Path to source images')
-    parser.add_argument('--limit-number-of-records', type=int, default=20, help='Take only this maximum records from dataset')
+    parser.add_argument('--limit-number-of-records', type=int, default=40, help='Take only this maximum records from dataset')
 
     parser.add_argument('--epochs', type=int, default=2000)
     parser.add_argument('--batch-size', type=int, default=12, help='Size of batch')
