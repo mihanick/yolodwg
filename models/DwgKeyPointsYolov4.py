@@ -445,7 +445,8 @@ class DwgKeyPointsYolov4(nn.Module):
             num_coordinates=2,
             num_pnt_classes=3,
             num_img_channels=3,
-            pretrained=True):
+            pretrained=True,
+            requires_grad=False):
         '''
         pretrained will only work on n_classes == 80
         '''
@@ -461,8 +462,10 @@ class DwgKeyPointsYolov4(nn.Module):
 
         self.model = Yolov4(n_classes=n_box_classes)
 
-        if pretrained and self.n_box_classes == 80:
+        if pretrained:
             checkpoint = torch.load('yolov4.pth', map_location=config.device)
+            # Pretrained can only work on 80 classes
+            self.model = Yolov4(n_classes=80)
             load_cp = {}
             for k in checkpoint:
                 new_key = k
@@ -470,6 +473,14 @@ class DwgKeyPointsYolov4(nn.Module):
                     new_key = k.replace('neek', 'neck')
                 load_cp[new_key] = checkpoint[k]
             self.model.load_state_dict(load_cp)
+
+            if not requires_grad:
+                for param in self.model.parameters():
+                    param.requires_grad = False
+
+            # head will be trained anyways
+            output_ch = (4 + 1 + self.n_box_classes) * 3
+            self.model.head = Yolov4Head(output_ch, self.n_box_classes)
 
     def forward(self, x):
         xin = self.model(x)
