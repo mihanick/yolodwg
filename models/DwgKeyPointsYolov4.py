@@ -448,7 +448,7 @@ class DwgKeyPointsYolov4(nn.Module):
             pretrained=True,
             requires_grad=False):
         '''
-        pretrained will only work on n_classes == 80
+        
         '''
         super(DwgKeyPointsYolov4, self).__init__()
 

@@ -133,27 +133,32 @@ class EntityDataset(Dataset):
                 keypoints = np.zeros([dim_count * len(self.pnt_classes), 1 + 1 + 1 + self.num_coordinates + 1], dtype=float)
                 kp_counter = 0
 
+                # boundboxes are calculated from keypoints
+                boxes = np.zeros((dim_count, 5))
+                
                 for dim_no, dim_row in dims.iterrows():
                     for pnt_id, pnt_class in enumerate(self.pnt_classes):
                         keypoints[kp_counter, 0] = dim_no + 1 # dimension number
                         keypoints[kp_counter, 1] = pnt_id + 1 # point_id (nonzero)
                         for coord_id, coord_name in enumerate(self.coordinates):
                             coordval = dim_row[f'{pnt_class}.{coord_name}'] #  ['XLine1Point','XLine2Point','DimLinePoint'].[X,Y]
+
                             keypoints[kp_counter, 1 + 1 + coord_id] = coordval
                         keypoints[kp_counter, 1 + 1 + self.num_coordinates] = 0 # good
                         keypoints[kp_counter, 1 + 1 + 1 + self.num_coordinates] = class_id + 1 # AlignedDimension (nonzero)
                         kp_counter += 1
 
-            keypoints[:, 2:4] /= self.img_size # scale coordinates to [0..1]
-            keypoints[:, 3] = 1 - keypoints[:, 3]
-            
-            # boundboxes are calculated from keypoints
-            boxes = np.zeros((dim_count, 5))
-            # x1y1 = xmin, ymin of all keypoints of one label (dim=1)
-            boxes[:, :2] = np.min(keypoints[:, 2:4], axis=0)
-            # x2y2 = xmax, ymax
-            boxes[:, 2:4] = np.max(keypoints[:, 2:4], axis=0)
-            boxes[:, 4] = 1
+                    # bound box coordinates from min and max coords of keypoints
+                    boxes[dim_no, :2] = np.min(keypoints[keypoints[:, 0] == dim_no + 1][:, 2:4], axis=0)
+                    boxes[dim_no, 2:4] = np.max(keypoints[keypoints[:, 0] == dim_no + 1][:, 2:4], axis=0)
+
+                keypoints[:, 2:4] /= self.img_size # scale coordinates to [0..1]
+                keypoints[:, 3] = 1 - keypoints[:, 3] #flip y
+
+                boxes[:, :4] /= self.img_size # scale coordinates to [0..1]
+                boxes[:, 1] = 1 - boxes[:, 1] #flip y
+                boxes[:, 3] = 1 - boxes[:, 3] #flip y
+                boxes[:, 4] = class_id
 
             self.data.append((img, boxes, keypoints))
 

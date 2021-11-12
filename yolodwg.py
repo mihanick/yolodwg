@@ -176,7 +176,8 @@ def run(
     #model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_pnt_classes=dwg_dataset.entities.num_pnt_classes, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
     # model = DwgKeyPointsResNet50(pretrained=True, requires_grad=False, max_points=dwg_dataset.entities.max_labels, num_pnt_classes=dwg_dataset.entities.num_pnt_classes, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
     model = DwgKeyPointsYolov4(
-                                pretrained=True,
+                                pretrained=False,
+                                requires_grad=True,
                                 max_boxes=dwg_dataset.entities.max_boxes,
                                 num_pnt_classes=dwg_dataset.entities.max_keypoints_per_box,
                                 n_box_classes=num_classes,
@@ -289,13 +290,13 @@ def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=str, default='data/ids128.cache', help='Path to ids.json or dataset.cache of dataset')
     parser.add_argument('--image-folder', type=str, default='data/images', help='Path to source images')
-    parser.add_argument('--limit-number-of-records', type=int, default=40, help='Take only this maximum records from dataset')
+    parser.add_argument('--limit-number-of-records', type=int, default=600, help='Take only this maximum records from dataset')
 
     parser.add_argument('--epochs', type=int, default=2000)
-    parser.add_argument('--batch-size', type=int, default=12, help='Size of batch')
+    parser.add_argument('--batch-size', type=int, default=32, help='Size of batch')
     parser.add_argument('--lr', type=float, default=0.0008, help='Starting learning rate')
 
-    parser.add_argument('--checkpoint-interval', type=int, default=10, help='Save checkpoint every n epoch')
+    parser.add_argument('--checkpoint-interval', type=int, default=50, help='Save checkpoint every n epoch')
     parser.add_argument('--checkpoint', type=str, default=None, help='Path to starting checkpoint weights')
     opt = parser.parse_args()
     return vars(opt) # https://stackoverflow.com/questions/16878315/what-is-the-right-way-to-treat-python-argparse-namespace-as-a-dictionary
