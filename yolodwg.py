@@ -165,12 +165,13 @@ def run(
 
     dwg_dataset = DwgDataset(entities=entities, batch_size=batch_size)
     dwg_dataset.entities.save_cache('data/ids128.cache')
+
     train_loader = dwg_dataset.train_loader
     val_loader   = dwg_dataset.val_loader
 
     assert len(train_loader) > 0 and len(val_loader) > 0, "No data"
 
-    num_classes = dwg_dataset.entities.num_classes + 1
+    num_classes = dwg_dataset.entities.num_classes
 
     # create model
     #model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_pnt_classes=dwg_dataset.entities.num_pnt_classes, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
@@ -180,7 +181,7 @@ def run(
                                 requires_grad=True,
                                 max_boxes=dwg_dataset.entities.max_boxes,
                                 num_pnt_classes=dwg_dataset.entities.max_keypoints_per_box,
-                                n_box_classes=num_classes,
+                                n_box_classes=num_classes + 1,
                                 num_coordinates=dwg_dataset.entities.num_coordinates,
                                 num_img_channels=dwg_dataset.entities.num_image_channels)
 
@@ -201,7 +202,7 @@ def run(
     #scheduler = StepLR(optimizer, step_size=10, gamma=0.95)
 
     #criterion = non_zero_loss(coordinate_loss_name="MSELoss", coordinate_loss_multiplier=1, class_loss_multiplier=1)
-    criterion = Yolo_loss(device=config.device, batch=batch_size, n_classes=num_classes, image_size=dwg_dataset.entities.img_size)
+    criterion = Yolo_loss(device=config.device, batch=batch_size, n_classes=num_classes + 1, image_size=dwg_dataset.entities.img_size)
 
     if checkpoint_path:
         if Path(checkpoint_path).exists():
@@ -290,11 +291,11 @@ def parse_opt():
     parser = argparse.ArgumentParser()
     parser.add_argument('--data', type=str, default='data/ids128.cache', help='Path to ids.json or dataset.cache of dataset')
     parser.add_argument('--image-folder', type=str, default='data/images', help='Path to source images')
-    parser.add_argument('--limit-number-of-records', type=int, default=600, help='Take only this maximum records from dataset')
+    parser.add_argument('--limit-number-of-records', type=int, default=128, help='Take only this maximum records from dataset')
 
     parser.add_argument('--epochs', type=int, default=2000)
     parser.add_argument('--batch-size', type=int, default=32, help='Size of batch')
-    parser.add_argument('--lr', type=float, default=0.0008, help='Starting learning rate')
+    parser.add_argument('--lr', type=float, default=0.008, help='Starting learning rate')
 
     parser.add_argument('--checkpoint-interval', type=int, default=50, help='Save checkpoint every n epoch')
     parser.add_argument('--checkpoint', type=str, default=None, help='Path to starting checkpoint weights')

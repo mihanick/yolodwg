@@ -296,6 +296,7 @@ class Yolo_loss(nn.Module):
     def forward(self, xin, labels=None):
         loss, loss_xy, loss_wh, loss_obj, loss_cls, loss_l2 = 0, 0, 0, 0, 0, 0
         for output_id, output in enumerate(xin):
+            assert not torch.isnan(output).any(), 'Model output contains nan'
             batchsize = output.shape[0]
             fsize = output.shape[2]
             n_ch = 5 + self.n_classes

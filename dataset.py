@@ -82,7 +82,7 @@ class EntityDataset(Dataset):
             cached_data = torch.load(cache_file)
             # check cached validity:
             self.img_size = cached_data['img_size']
-            self.max_labels = cached_data['max_boxes']
+            self.max_boxes = cached_data['max_boxes']
             self.max_keypoints_per_box = cached_data['max_keypoints_per_box']
             self.data = cached_data['data']
 
@@ -158,7 +158,7 @@ class EntityDataset(Dataset):
                 boxes[:, :4] /= self.img_size # scale coordinates to [0..1]
                 boxes[:, 1] = 1 - boxes[:, 1] #flip y
                 boxes[:, 3] = 1 - boxes[:, 3] #flip y
-                boxes[:, 4] = class_id
+                boxes[:, 4] = class_id + 1
 
             self.data.append((img, boxes, keypoints))
 
