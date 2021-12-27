@@ -15,7 +15,7 @@ from yolodwg import EntityDataset
 
 
 def build_data(
-        mongo_db_connection_string='mongodb://192.168.1.49:27017',
+        mongo_db_connection_string='mongodb://localhost:27017',
         img_size=512,
         limit_records=None,
         max_entities=None,
@@ -85,7 +85,7 @@ def query_collection_to_dataframe(
 
     # If collection is not specified
     if db is None:
-        client = MongoClient('mongodb://192.168.0.102:27017')
+        client = MongoClient('mongodb://localhost:27017')
         db = client.geometry3
     objects = db.objects
     fragments = db.fragments
@@ -100,7 +100,7 @@ def query_collection_to_dataframe(
 
     # filter out tables and schemes that doesn't contain annotations
     not_text_line = {'GroupId':group_id, 'ClassName':{'$nin':['Line', 'Text', 'Entity', 'Hatch', 'Polyline','AcDbBlockReference','Circle']}}
-    if objects.count(not_text_line) == 0:
+    if objects.count_documents(not_text_line) == 0:
         return
 
     # check number of entities per fragment
@@ -284,7 +284,7 @@ if __name__ == "__main__":
     cache = f'data/ids{img_size}.cache'
 
     save_json_ids_pickle_labels(
-        mongo_db_connection_string='mongodb://192.168.1.49:27017',
+        mongo_db_connection_string='mongodb://localhost:27017',
         img_size=img_size,
         limit_records=1200,
         max_entities=300,
