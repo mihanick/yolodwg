@@ -356,11 +356,8 @@ utils/.ipynb_checkpoints/utils-checkpoint.py
 *.weights
 
 # exclude data
-data/images/*.*
-data/images.zip
-data/*.json
-data/labels*.pickle
+data/*
 
 runs
 yolov4.pth
-data/geometry3/*
+
