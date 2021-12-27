@@ -151,13 +151,19 @@ class EntityDataset(Dataset):
                     # bound box coordinates from min and max coords of keypoints
                     boxes[dim_no, :2] = np.min(keypoints[keypoints[:, 0] == dim_no + 1][:, 2:4], axis=0)
                     boxes[dim_no, 2:4] = np.max(keypoints[keypoints[:, 0] == dim_no + 1][:, 2:4], axis=0)
+                    
 
                 keypoints[:, 2:4] /= self.img_size # scale coordinates to [0..1]
                 keypoints[:, 3] = 1 - keypoints[:, 3] #flip y
 
                 boxes[:, :4] /= self.img_size # scale coordinates to [0..1]
-                boxes[:, 1] = 1 - boxes[:, 1] #flip y
-                boxes[:, 3] = 1 - boxes[:, 3] #flip y
+                # as we're flipping min and max should be swapped
+                flipped_max = 1 - boxes[:, 1] #flip y
+                flipped_min = 1 - boxes[:, 3] #flip y
+                boxes[:, 3] = flipped_max
+                boxes[:, 1] = flipped_min
+                assert (boxes[:, 3] >= boxes[:, 1]).all() , "Max coordinate less than min"
+                
                 boxes[:, 4] = class_id + 1
 
             self.data.append((img, boxes, keypoints))
@@ -224,6 +230,8 @@ class DwgDataset:
                 num_boxes = box.shape[0]
                 boxes[i, :num_boxes] = torch.from_numpy(box)
 
+            assert (boxes[:, :, 2] - boxes[:, :, 0] >= 0).all()
+            assert (boxes[:, :, 3] - boxes[:, :, 1] >= 0).all()
             return imgs, boxes, keypoints
 
         self.train_loader = torch.utils.data.DataLoader(self.entities, batch_size=batch_size, sampler=train_sampler, collate_fn=custom_collate, shuffle=False, drop_last=False)
