@@ -9,7 +9,14 @@
             "type": "python",
             "request": "launch",
             "program": "yolodwg.py",
-            "console": "integratedTerminal"
+            "console": "integratedTerminal",
+            "args": [
+                "--data=data/ids64.cache",
+                //"--limit-number-of-records=32",
+                "--epochs=200",
+                "--batch-size=4",
+                "--checkpoint-interval=10"
+            ]
         },
     ]
 }
