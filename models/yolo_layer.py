@@ -196,8 +196,20 @@ def yolo_forward_dynamic(output, conf_thresh, num_classes, anchors, num_anchors,
 
     # Apply sigmoid(), exp() and softmax() to slices
     #
-    bxy = torch.sigmoid(bxy) * scale_x_y - 0.5 * (scale_x_y - 1)
-    bwh = torch.exp(bwh)
+    #bxy = torch.sigmoid(bxy) * scale_x_y - 0.5 * (scale_x_y - 1)
+    #bwh = torch.exp(bwh)
+    bxymin = bxy.min()
+    bxymax = bxy.max()
+    bxy -= bxymin
+    bxy /= (bxymax - bxymin)
+
+    bwhmin = bwh.min()
+    bwhmax = bwh.max()
+    bwh -= bwhmin
+    bwh /= (bwhmax - bwhmin)
+
+    
+
     det_confs = torch.sigmoid(det_confs)
     cls_confs = torch.sigmoid(cls_confs)
 

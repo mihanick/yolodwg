@@ -112,7 +112,7 @@ def val_epoch(model, loader, device, criterion=None, epoch=0, epochs=0, plot_pre
             predicted_boxes = out[0] # batch * 1008 * max_boxes * 4:[x1 y1 x2 y2]
             confidences = out[1] # batch * 1008 * n_classes
 
-            predictions = nms_conf_suppression(box_array=predicted_boxes, confs=confidences, conf_thresh=0.25, nms_thresh=0.1)
+            predictions = nms_conf_suppression(box_array=predicted_boxes, confs=confidences, conf_thresh=0.1, nms_thresh=0.2)
 
             # TODO: mean iou(boxes, true_boxes) mention device
             pred_counter = 0
@@ -164,14 +164,13 @@ def run(
         entities.from_cache(cache_file=data_file_path)
 
     dwg_dataset = DwgDataset(entities=entities, batch_size=batch_size)
-    dwg_dataset.entities.save_cache('data/ids128.cache')
 
     train_loader = dwg_dataset.train_loader
     val_loader   = dwg_dataset.val_loader
 
     assert len(train_loader) > 0 and len(val_loader) > 0, "No data"
 
-    num_classes = dwg_dataset.entities.num_classes
+    num_classes = dwg_dataset.entities.num_classes + 1
 
     # create model
     #model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_pnt_classes=dwg_dataset.entities.num_pnt_classes, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
@@ -181,7 +180,7 @@ def run(
                                 requires_grad=True,
                                 max_boxes=dwg_dataset.entities.max_boxes,
                                 num_pnt_classes=dwg_dataset.entities.max_keypoints_per_box,
-                                n_box_classes=num_classes + 1,
+                                n_box_classes=num_classes,
                                 num_coordinates=dwg_dataset.entities.num_coordinates,
                                 num_img_channels=dwg_dataset.entities.num_image_channels)
 
@@ -202,7 +201,7 @@ def run(
     #scheduler = StepLR(optimizer, step_size=10, gamma=0.95)
 
     #criterion = non_zero_loss(coordinate_loss_name="MSELoss", coordinate_loss_multiplier=1, class_loss_multiplier=1)
-    criterion = Yolo_loss(device=config.device, batch=batch_size, n_classes=num_classes + 1, image_size=dwg_dataset.entities.img_size)
+    criterion = Yolo_loss(device=config.device, batch=batch_size, n_classes=num_classes, image_size=dwg_dataset.entities.img_size)
 
     if checkpoint_path:
         if Path(checkpoint_path).exists():
@@ -289,15 +288,15 @@ def run(
 
 def parse_opt():
     parser = argparse.ArgumentParser()
-    parser.add_argument('--data', type=str, default='data/ids128.cache', help='Path to ids.json or dataset.cache of dataset')
+    parser.add_argument('--data', type=str, default='data/ids256.cache', help='Path to ids.json or dataset.cache of dataset')
     parser.add_argument('--image-folder', type=str, default='data/images', help='Path to source images')
-    parser.add_argument('--limit-number-of-records', type=int, default=128, help='Take only this maximum records from dataset')
+    parser.add_argument('--limit-number-of-records', type=int, default=None, help='Take only this maximum records from dataset')
 
-    parser.add_argument('--epochs', type=int, default=2000)
+    parser.add_argument('--epochs', type=int, default=200)
     parser.add_argument('--batch-size', type=int, default=32, help='Size of batch')
     parser.add_argument('--lr', type=float, default=0.008, help='Starting learning rate')
 
-    parser.add_argument('--checkpoint-interval', type=int, default=50, help='Save checkpoint every n epoch')
+    parser.add_argument('--checkpoint-interval', type=int, default=10, help='Save checkpoint every n epoch')
     parser.add_argument('--checkpoint', type=str, default=None, help='Path to starting checkpoint weights')
     opt = parser.parse_args()
     return vars(opt) # https://stackoverflow.com/questions/16878315/what-is-the-right-way-to-treat-python-argparse-namespace-as-a-dictionary
