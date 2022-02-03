@@ -222,7 +222,7 @@ class DwgDataset:
                 ima = img / 255
                 ima = np.transpose(ima, (2, 0, 1)) # x, y, channels -> channels, x, y
                 ima = torch.from_numpy(ima)
-                imgs[i] = ima
+                imgs[i] = 1 - ima
 
                 num_keypoints = keypoint.shape[0]
                 keypoints[i, :num_keypoints] = torch.from_numpy(keypoint)

@@ -278,7 +278,7 @@ def cache_dataset(ids_file='data/ids128.json', cache_path='data/ids128.cache'):
     ed.save_cache(cache_path)
 
 if __name__ == "__main__":
-    img_size=128
+    img_size=64
     ids = f'data/ids{img_size}.json'
     labels = f'data/labels_{img_size}.pickle'
     cache = f'data/ids{img_size}.cache'
@@ -287,7 +287,7 @@ if __name__ == "__main__":
         mongo_db_connection_string='mongodb://localhost:27017',
         img_size=img_size,
         limit_records=1200,
-        max_entities=300,
+        max_entities=200,
         max_labels=10,
         skip_empty_annotations=True,
         labels_pandas_file=labels,
