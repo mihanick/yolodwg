@@ -20,7 +20,10 @@ def tensor_info(tensor):
     if tensor.ndim == 0:
         sh_str = str(tensor.item())
 
-    return sh_str + ' ' + repr(tensor.dtype)[6:] + '@' + str(tensor.device) + '\n' + old_repr(tensor)
+        return f'{sh_str} {repr(tensor.dtype)[6:]} @{str(tensor.device)} \n{old_repr(tensor)}'
+    return f'{sh_str} {repr(tensor.dtype)[6:]} min:{tensor.min():.4f} max:{tensor.max():.4f} @{str(tensor.device)} \n{old_repr(tensor)}'
+
+
 torch.Tensor.__repr__ = tensor_info
 
 
