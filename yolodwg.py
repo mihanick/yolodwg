@@ -112,9 +112,9 @@ def val_epoch(model, loader, device, criterion=None, epoch=0, epochs=0, plot_pre
             predicted_boxes = out[0] # batch * 1008 * max_boxes * 4:[x1 y1 x2 y2]
             confidences = out[1] # batch * 1008 * n_classes
 
-            predictions = nms_conf_suppression(box_array=predicted_boxes, confs=confidences, conf_thresh=0.1, nms_thresh=0.2)
+            predictions = nms_conf_suppression(box_array=predicted_boxes, confs=confidences, conf_thresh=0.05, nms_thresh=0.05)
 
-            # TODO: mean iou(boxes, true_boxes) mention device
+            # TODO: mean iou(boxes, true_boxes) mention device TODO: Too slow here
             pred_counter = 0
             for img_i, (pred, trueb) in enumerate(zip(predictions, true_boxes)):
                 for single_true_box in trueb:
@@ -170,7 +170,7 @@ def run(
 
     assert len(train_loader) > 0 and len(val_loader) > 0, "No data"
 
-    num_classes = dwg_dataset.entities.num_classes + 1
+    num_classes = dwg_dataset.num_classes + 1
 
     # create model
     #model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_pnt_classes=dwg_dataset.entities.num_pnt_classes, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
@@ -178,11 +178,12 @@ def run(
     model = DwgKeyPointsYolov4(
                                 pretrained=False,
                                 requires_grad=True,
-                                max_boxes=dwg_dataset.entities.max_boxes,
-                                num_pnt_classes=dwg_dataset.entities.max_keypoints_per_box,
+                                size=32, #vanilla = 32
+                                max_boxes=dwg_dataset.max_boxes,
+                                num_pnt_classes=dwg_dataset.max_keypoints_per_box,
                                 n_box_classes=num_classes,
-                                num_coordinates=dwg_dataset.entities.num_coordinates,
-                                num_img_channels=dwg_dataset.entities.num_image_channels)
+                                num_coordinates=dwg_dataset.num_coordinates,
+                                num_img_channels=dwg_dataset.num_image_channels)
 
     # n_labels = entities.max_labels // entities.num_pnt_classes
     #model = DwgKeyPointsRcnn(
@@ -201,7 +202,7 @@ def run(
     #scheduler = StepLR(optimizer, step_size=10, gamma=0.95)
 
     #criterion = non_zero_loss(coordinate_loss_name="MSELoss", coordinate_loss_multiplier=1, class_loss_multiplier=1)
-    criterion = Yolo_loss(device=config.device, batch=batch_size, n_classes=num_classes, image_size=dwg_dataset.entities.img_size)
+    criterion = Yolo_loss(device=config.device, batch=batch_size, n_classes=num_classes, image_size=dwg_dataset.img_size)
 
     if checkpoint_path:
         if Path(checkpoint_path).exists():

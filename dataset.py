@@ -191,6 +191,13 @@ class DwgDataset:
 
         self.img_size = self.entities.img_size
 
+        self.num_classes = self.entities.num_classes
+        self.img_size = self.entities.img_size
+        self.max_boxes = self.entities.max_boxes
+        self.max_keypoints_per_box = self.entities.max_keypoints_per_box
+        self.num_coordinates = self.entities.num_coordinates
+        self.num_image_channels = self.entities.num_image_channels
+
         data_len = len(self.entities)
 
         validation_fraction = 0.1
@@ -205,7 +212,7 @@ class DwgDataset:
 
         # we need to keep order for debug purposes
         # for release could change to SubsetRandomSampler
-        train_sampler = SequentialSampler(train_indices) 
+        train_sampler = SequentialSampler(train_indices)
         val_sampler   = SequentialSampler(val_indices)
 
         # https://stackoverflow.com/questions/64586575/adding-class-objects-to-pytorch-dataloader-batch-must-contain-tensors
@@ -222,7 +229,7 @@ class DwgDataset:
                 ima = img / 255
                 ima = np.transpose(ima, (2, 0, 1)) # x, y, channels -> channels, x, y
                 ima = torch.from_numpy(ima)
-                imgs[i] = 1 - ima
+                imgs[i] = ima
 
                 num_keypoints = keypoint.shape[0]
                 keypoints[i, :num_keypoints] = torch.from_numpy(keypoint)

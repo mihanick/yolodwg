@@ -462,7 +462,7 @@ class DwgKeyPointsYolov4(nn.Module):
             num_img_channels=3,
             pretrained=True,
             requires_grad=False,
-            size=16):
+            size=32):
         '''
         
         '''

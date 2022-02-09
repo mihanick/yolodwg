@@ -106,7 +106,7 @@ def plot_boxes_cv2(img, boxes, savename=None, class_names=None, color=None):
     img = np.ascontiguousarray(np.copy(img)) #https://stackoverflow.com/questions/23830618/python-opencv-typeerror-layout-of-the-output-array-incompatible-with-cvmat
     
     colors = np.array([[1, 0, 1], [0, 0, 1], [0, 1, 1], [0, 1, 0], [1, 1, 0], [1, 0, 0]], dtype=np.float32)
-
+    
     def get_color(c, x, max_val):
         ratio = float(x) / max_val * 5
         i = int(math.floor(ratio))
@@ -128,7 +128,7 @@ def plot_boxes_cv2(img, boxes, savename=None, class_names=None, color=None):
         if color:
             rgb = color
         else:
-            rgb = (255, 0, 0)
+            rgb = (1, 0, 0)
         if len(box) >= 7 and class_names:
             cls_conf = box[5]
             cls_id = box[6]

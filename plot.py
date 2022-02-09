@@ -12,7 +12,7 @@ import matplotlib
 from models.utils import nms_conf_suppression, plot_boxes_cv2
 matplotlib.style.use('ggplot')
 
-def plot_loader_predictions(loader, model, epoch=0, plot_folder=None, limit_number_of_plots=3):
+def plot_loader_predictions(loader, model, epoch=0, conf_thresh=0.05, nms_thresh=0.05, plot_folder=None, limit_number_of_plots=3):
     if plot_folder is None:
         return
 
@@ -26,14 +26,16 @@ def plot_loader_predictions(loader, model, epoch=0, plot_folder=None, limit_numb
             out = model(imgs)
             predicted_boxes = out[0]
             confidences = out[1]
-            predictions = nms_conf_suppression(box_array=predicted_boxes, confs=confidences, conf_thresh=0.25, nms_thresh=0.1)
+            predictions = nms_conf_suppression(box_array=predicted_boxes, confs=confidences, conf_thresh=conf_thresh, nms_thresh=nms_thresh)
 
             fig = plot_batch_grid(
                         input_images=imgs,
+                        true_boxes=boxes,
                         true_keypoints=true_keypoints,
                         predictions=predictions,
                         plot_save_file=f'{plot_folder}/checkpoint_{epoch}_{i}.png')
             figs.append(fig)
+            plt.close()
             if limit_number_of_plots is not None:
                 if i > limit_number_of_plots:
                     break
@@ -57,9 +59,12 @@ def plot_batch_grid(input_images, true_boxes=None, true_keypoints=None, predicti
 
     #print(f'Plotting images grid:')
     for i, img in enumerate(input_images):
+        # plot only number of images to place in grid
         if i + 1 > grid_size * grid_size:
             break
+        # img = img.clip(min=0, max=1)
         input_image = img.detach().cpu().numpy()
+        
         input_image = np.transpose(input_image, (1, 2, 0)) #channels,x,y -> x,y,channels
         img_size = input_image.shape[0]
 
@@ -67,11 +72,11 @@ def plot_batch_grid(input_images, true_boxes=None, true_keypoints=None, predicti
         plt.axis('off')
 
         if predictions is not None:
-            input_image = plot_boxes_cv2(img=input_image, boxes=predictions[i])
-
+            input_image = plot_boxes_cv2(img=input_image, boxes=predictions[i], color=(1,0,0)) #red
+            plt.imshow(input_image)
         if true_boxes is not None:
-            input_image = plot_boxes_cv2(img=input_image, boxes=true_boxes[i], color=(0,255,0))
-        plt.imshow(input_image)
+            input_image = plot_boxes_cv2(img=input_image, boxes=true_boxes[i], color=(0,1,0)) #green
+            plt.imshow(input_image)
 
         if true_keypoints is not None:
             tkp = true_keypoints[i, :, 2:4].detach().cpu().numpy()
