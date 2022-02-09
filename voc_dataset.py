@@ -40,7 +40,8 @@ def open_square(src_img_path, to_size=512):
         trg.paste(src)
 
     trg = trg.convert('RGB')
-    trg = trg.resize((to_size, to_size))
+    if to_size:
+        trg = trg.resize((to_size, to_size))
 
     #nsrc = np.array(src)
     ntrg = np.array(trg)
@@ -100,11 +101,12 @@ class VocDataset(Dataset):
             )
             boxes = bboxes.reshape(-1,5)
             numboxes = boxes.shape[0]
-            if numboxes > self.max_boxes :
+            if numboxes > self.max_boxes:
                 self.max_boxes = numboxes
             keypoints = np.zeros([numboxes * len(self.pnt_classes), 1 + 1 + 1 + self.num_coordinates + 1], dtype=float)
 
-            assert boxes[:,:4].max()>0.001
+            # debug:
+            # assert boxes[:,:4].max()>0.001
 
             data.append((img_path, boxes, keypoints))
         return data
@@ -141,7 +143,7 @@ class VocDataset(Dataset):
     def __getitem__(self, index):
         img, boxes, keypoints = self.data[index]
 
-        assert boxes[:, :4].max()>1
+        # assert boxes[:, :4].max()>1
 
         return img, boxes, keypoints
 
@@ -189,10 +191,12 @@ class VocDataloader:
                 boxes[i, :num_boxes] = torch.from_numpy(box)
 
                 # scale coordinates to 0..1 this should be done on copy of data, as it causes data corruption each iteration
-                boxes[i, :num_boxes, :4] /= this_img_max_size 
+                # TODO: no scale
+                boxes[i, :num_boxes, :4] *= self.img_size / this_img_max_size
 
-            assert (boxes[:, :, 2] - boxes[:, :, 0] >= 0).all()
-            assert (boxes[:, :, 3] - boxes[:, :, 1] >= 0).all()
+            # max coords should be larger than min coords by dimension
+            # assert (boxes[:, :, 2] - boxes[:, :, 0] >= 0).all()
+            # assert (boxes[:, :, 3] - boxes[:, :, 1] >= 0).all()
             return imgs, boxes, None #keypoints=None for VOC
 
         self.train_loader = torch.utils.data.DataLoader(self.train_entities, batch_size=batch_size, collate_fn=custom_collate, shuffle=False, drop_last=False)
