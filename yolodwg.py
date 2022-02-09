@@ -28,6 +28,7 @@ from plot import plot_batch_grid, plot_loader_predictions
 from loss import Yolo_loss, bboxes_iou, non_zero_loss
 from config import get_ram_mem_usage, get_gpu_mem_usage
 import config
+from voc_dataset import VocDataloader, VocDataset
 
 #------------------------------
 
@@ -155,15 +156,20 @@ def run(
         checkpoint_path=None
     ):
 
-    # create dataset from images or from cache
-    # for debug: take only small number of records from dataset
-    entities = EntityDataset(limit_number_of_records=limit_number_of_records)
-    if data_file_path.endswith('.json'):
-        entities.from_json_ids_pickle_labels_img_folder(ids_file=data_file_path, image_folder=image_folder)
-    elif data_file_path.endswith('.cache'):
-        entities.from_cache(cache_file=data_file_path)
+    if data_file_path=='PascalVoc':
+        train_voc = VocDataset('data/voc/train_annotation.txt',limit_number_of_records=limit_number_of_records)
+        val_voc = VocDataset('data/voc/test_annotation.txt',limit_number_of_records=limit_number_of_records)
+        dwg_dataset = VocDataloader(train_voc, val_voc, batch_size=batch_size)
+    else:
+        # create dataset from images or from cache
+        # for debug: take only small number of records from dataset
+        entities = EntityDataset(limit_number_of_records=limit_number_of_records)
+        if data_file_path.endswith('.json'):
+            entities.from_json_ids_pickle_labels_img_folder(ids_file=data_file_path, image_folder=image_folder)
+        elif data_file_path.endswith('.cache'):
+            entities.from_cache(cache_file=data_file_path)
 
-    dwg_dataset = DwgDataset(entities=entities, batch_size=batch_size)
+        dwg_dataset = DwgDataset(entities=entities, batch_size=batch_size)
 
     train_loader = dwg_dataset.train_loader
     val_loader   = dwg_dataset.val_loader

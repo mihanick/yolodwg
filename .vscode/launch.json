@@ -11,11 +11,12 @@
             "program": "yolodwg.py",
             "console": "integratedTerminal",
             "args": [
-                "--data=data/ids64.cache",
-                //"--limit-number-of-records=32",
-                "--epochs=200",
+                "--data=PascalVoc",
+                //"--data=data/ids128.json",
+                "--limit-number-of-records=16",
+                "--epochs=500",
                 "--batch-size=4",
-                "--checkpoint-interval=10"
+                "--checkpoint-interval=50"
             ]
         },
     ]
