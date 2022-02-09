@@ -414,9 +414,9 @@ class Yolov4Head(nn.Module):
             y3 = self.yolo3(x18)
 
             #DEBUG:
-            assert not y1[0].mean().isnan()
-            assert not y2[0].mean().isnan()
-            assert not y3[0].mean().isnan()
+            # assert not y1[0].mean().isnan()
+            # assert not y2[0].mean().isnan()
+            # assert not y3[0].mean().isnan()
 
             return get_region_boxes([y1, y2, y3])
 

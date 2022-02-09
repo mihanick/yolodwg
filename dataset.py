@@ -62,7 +62,7 @@ class EntityDataset(Dataset):
 
         self.limit_number_of_records = limit_number_of_records
 
-        self.classes = ['AlignedDimension']
+        self.classes = ['None', 'AlignedDimension']
         self.pnt_classes = ['XLine1Point', 'XLine2Point', 'DimLinePoint']
         self.coordinates = ['X', 'Y']
 

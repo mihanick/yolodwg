@@ -99,8 +99,6 @@ def nms_cpu(boxes, confs, nms_thresh=0.5, min_mode=False):
     
     return np.array(keep)
 
-
-
 def plot_boxes_cv2(img, boxes, savename=None, class_names=None, color=None):
     import cv2
     img = np.ascontiguousarray(np.copy(img)) #https://stackoverflow.com/questions/23830618/python-opencv-typeerror-layout-of-the-output-array-incompatible-with-cvmat
@@ -119,11 +117,12 @@ def plot_boxes_cv2(img, boxes, savename=None, class_names=None, color=None):
     height = img.shape[0]
     for i in range(len(boxes)):
         box = boxes[i]
-        box[:4] = np.clip(box[:4], a_min=0, a_max=1)
-        x1 = int(box[0] * width)
-        y1 = int(box[1] * height)
-        x2 = int(box[2] * width)
-        y2 = int(box[3] * height)
+        # should be fine without:
+        # box[:4] = np.clip(box[:4], a_min=0, a_max=max(width, height))
+        x1 = int(box[0])
+        y1 = int(box[1])
+        x2 = int(box[2])
+        y2 = int(box[3])
 
         if color:
             rgb = color

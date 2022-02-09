@@ -106,14 +106,16 @@ def val_epoch(model, loader, device, criterion=None, epoch=0, epochs=0, plot_pre
         progress_bar = tqdm(enumerate(loader), total=len(loader))
         mean_ious = []
         for batch_i, (imgs, true_boxes, keypoints) in progress_bar:
+            img_size = imgs.shape[2]
             mean_iou = 0
             # keypoints = keypoints.to(config.device)
             imgs = imgs.to(device)
             out = model(imgs)
             predicted_boxes = out[0] # batch * 1008 * max_boxes * 4:[x1 y1 x2 y2]
+            predicted_boxes *= img_size
             confidences = out[1] # batch * 1008 * n_classes
 
-            predictions = nms_conf_suppression(box_array=predicted_boxes, confs=confidences, conf_thresh=0.05, nms_thresh=0.05)
+            predictions = nms_conf_suppression(box_array=predicted_boxes, confs=confidences, conf_thresh=0.25, nms_thresh=0.05)
 
             # TODO: mean iou(boxes, true_boxes) mention device TODO: Too slow here
             pred_counter = 0
@@ -176,13 +178,13 @@ def run(
 
     assert len(train_loader) > 0 and len(val_loader) > 0, "No data"
 
-    num_classes = dwg_dataset.num_classes + 1
+    num_classes = dwg_dataset.num_classes
 
     # create model
     #model = DwgKeyPointsModel(max_points=dwg_dataset.entities.max_labels, num_pnt_classes=dwg_dataset.entities.num_pnt_classes, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
     # model = DwgKeyPointsResNet50(pretrained=True, requires_grad=False, max_points=dwg_dataset.entities.max_labels, num_pnt_classes=dwg_dataset.entities.num_pnt_classes, num_coordinates=dwg_dataset.entities.num_coordinates, num_img_channels=dwg_dataset.entities.num_image_channels)
     model = DwgKeyPointsYolov4(
-                                pretrained=False,
+                                pretrained=True,
                                 requires_grad=True,
                                 size=32, #vanilla = 32
                                 max_boxes=dwg_dataset.max_boxes,
@@ -267,9 +269,10 @@ def run(
 
             last_epoch = (epoch == epochs - 1)
             checkpoint_is_better = val_iou != 0 and (val_iou >= best_iou)
-            should_save_checkpoint = checkpoint_is_here or last_epoch or checkpoint_is_better
-            if should_save_checkpoint:
-                save_checkpoint(model, optimizer, checkpoint_path=f'{tb_log_path}/checkpoint{epoch}.weights', iou=val_iou)
+
+            if checkpoint_is_here or last_epoch:
+                #save_checkpoint(model, optimizer, checkpoint_path=f'{tb_log_path}/checkpoint{epoch}.weights', iou=val_iou)
+
                 # Display generated figure in tensorboard
                 figs = plot_loader_predictions(loader=val_loader, model=model, epoch=epoch, plot_folder=tb_log_path)
                 for i, fig in enumerate(figs):
@@ -278,7 +281,7 @@ def run(
                 plt.close()
 
             # save checkpoint for best results
-            if checkpoint_is_better:
+            if checkpoint_is_better or last_epoch:
                 best_iou = val_iou
                 save_checkpoint(model, optimizer, checkpoint_path=f'{tb_log_path}/best.weights', iou=val_iou)
                 # print(f"Best recall: {best_recall:.4f} Best precision: {best_precision:.4f}")

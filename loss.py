@@ -3,6 +3,7 @@ import math
 import torch
 import torch.nn as nn
 from torch.nn import functional as F
+import config
 
 from chamfer_loss import my_chamfer_distance
 
@@ -97,7 +98,7 @@ class non_zero_loss(nn.Module):
 
         return total_loss, coordinate_loss, classification_loss
 
-
+######################### loss calculation from pytorch_YOLO4
 
 def bboxes_iou(bboxes_a, bboxes_b, xyxy=True, GIoU=False, DIoU=False, CIoU=False):
     """Calculate the Intersection of Unions (IoUs) between bounding boxes.
@@ -199,7 +200,7 @@ class Yolo_loss(nn.Module):
 
         self.anchors = [[12, 16], [19, 36], [40, 28], [36, 75], [76, 55], [72, 146], [142, 110], [192, 243], [459, 401]]
         self.anch_masks = [[0, 1, 2], [3, 4, 5], [6, 7, 8]]
-        self.ignore_thre = 0.5
+        self.ignore_thre = 0.4
 
         self.masked_anchors, self.ref_anchors, self.grid_x, self.grid_y, self.anchor_w, self.anchor_h = [], [], [], [], [], []
 
