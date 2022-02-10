@@ -115,12 +115,12 @@ def val_epoch(model, loader, device, criterion=None, epoch=0, epochs=0, plot_pre
             predicted_boxes *= img_size
             confidences = out[1] # batch * 1008 * n_classes
 
-            predictions = nms_conf_suppression(box_array=predicted_boxes, confs=confidences, conf_thresh=0.25, nms_thresh=0.05)
+            predictions = nms_conf_suppression(box_array=predicted_boxes, confs=confidences, conf_thresh=0.1, nms_thresh=0.2)
 
             # TODO: mean iou(boxes, true_boxes) mention device TODO: Too slow here
             pred_counter = 0
             for img_i, (pred, trueb) in enumerate(zip(predictions, true_boxes)):
-                for single_true_box in trueb:
+                for single_true_box in trueb[trueb[:, 4] > 0]:# exclude empty truth
                     pred_counter += 1
                     max_iou = 0
                     for single_predicted_box in pred:
@@ -131,8 +131,8 @@ def val_epoch(model, loader, device, criterion=None, epoch=0, epochs=0, plot_pre
             mean_ious.append(mean_iou)
             progress_bar.set_description(f"[{epoch} / {epochs}]Val . Mean IOU:{mean_iou:.4f}.")
 
-            #debug plot
-            if plot_prediction and plot_folder is not None:
+            n_batches_to_plot = 4
+            if (batch_i < n_batches_to_plot) and plot_prediction and plot_folder is not None:
                 plot_batch_grid(
                             input_images=imgs,
                             true_boxes=true_boxes,

@@ -12,7 +12,7 @@ import matplotlib
 from models.utils import nms_conf_suppression, plot_boxes_cv2
 matplotlib.style.use('ggplot')
 
-def plot_loader_predictions(loader, model, epoch=0, conf_thresh=0.25, nms_thresh=0.5, plot_folder=None, limit_number_of_plots=3):
+def plot_loader_predictions(loader, model, epoch=0, conf_thresh=0.1, nms_thresh=0.2, plot_folder=None, limit_number_of_plots=2):
     if plot_folder is None:
         return
 

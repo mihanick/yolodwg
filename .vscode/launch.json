@@ -13,10 +13,11 @@
             "args": [
                 "--data=PascalVoc",
                 //"--data=data/ids128.json",
-                "--limit-number-of-records=16",
-                "--epochs=500",
-                "--batch-size=4",
-                "--checkpoint-interval=50"
+                "--lr=0.0011",
+                "--limit-number-of-records=64",
+                "--epochs=50",
+                "--batch-size=16",
+                "--checkpoint-interval=5"
             ]
         },
     ]
